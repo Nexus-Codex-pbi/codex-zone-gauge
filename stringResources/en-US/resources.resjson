@@ -1,0 +1,8 @@
+{
+    "Visual_Short_Description": "Semi-circular gauge with configurable red/amber/green zones.",
+    "Visual_Long_Description": "A zone gauge visual that displays a value on a configurable arc with up to three colour-coded zones (danger, warning, success), optional target marker, and needle or arc value indicator.",
+    "Visual_EmptyText": "Drop a measure here",
+    "Visual_Zone_Poor": "Poor",
+    "Visual_Zone_Acceptable": "Acceptable",
+    "Visual_Zone_Good": "Good"
+}

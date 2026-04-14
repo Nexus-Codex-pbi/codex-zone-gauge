@@ -1,0 +1,48 @@
+.zone-gauge-svg {
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+}
+
+.gauge-group {
+    /* Container for all gauge elements */
+}
+
+.zone-arc {
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+}
+
+.value-arc {
+    pointer-events: none;
+}
+
+.target-line {
+    stroke-linecap: round;
+    pointer-events: none;
+}
+
+.target-marker {
+    pointer-events: none;
+}
+
+.value-text {
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+    user-select: none;
+    pointer-events: none;
+}
+
+.label-text {
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+    user-select: none;
+    pointer-events: none;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+}
+
+.empty-text {
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+    user-select: none;
+    pointer-events: none;
+    font-style: italic;
+}

@@ -1,0 +1,634 @@
+"use strict";
+
+import powerbi from "powerbi-visuals-api";
+import { FormattingSettingsService } from "powerbi-visuals-utils-formattingmodel";
+import { arc as d3arc } from "d3-shape";
+import { scaleLinear } from "d3-scale";
+import { select, Selection } from "d3-selection";
+import { interpolate } from "d3-interpolate";
+import "d3-transition";
+import "./../style/visual.less";
+
+import VisualConstructorOptions = powerbi.extensibility.visual.VisualConstructorOptions;
+import VisualUpdateOptions = powerbi.extensibility.visual.VisualUpdateOptions;
+import IVisual = powerbi.extensibility.visual.IVisual;
+import IVisualEventService = powerbi.extensibility.IVisualEventService;
+import IVisualHost = powerbi.extensibility.visual.IVisualHost;
+import ISelectionManager = powerbi.extensibility.ISelectionManager;
+import ILocalizationManager = powerbi.extensibility.ILocalizationManager;
+import ISandboxExtendedColorPalette = powerbi.extensibility.ISandboxExtendedColorPalette;
+import ITooltipService = powerbi.extensibility.ITooltipService;
+import VisualTooltipDataItem = powerbi.extensibility.VisualTooltipDataItem;
+import DataView = powerbi.DataView;
+
+import { VisualFormattingSettingsModel } from "./settings";
+import { clamp, CODEX_TOKENS } from "./utils";
+
+/**
+ * Angle ranges for each gauge type (radians).
+ *
+ * d3.arc treats 0 as 12-o'clock, with angles increasing clockwise.
+ * For a gauge that reads left-to-right:
+ *   semicircle  : 9-o'clock (-PI/2) to 3-o'clock (+PI/2)  — 180 deg
+ *   threeQuarter: -3PI/4 to +3PI/4                          — 270 deg
+ *   arc         : -5PI/6 to +5PI/6                          — 300 deg
+ *
+ * NOTE: d3.arc uses the *mathematical convention* where 0 is top-centre (12-o'clock)
+ * and positive angles rotate clockwise. So startAngle = -PI/2 points left (9-o'clock)
+ * and endAngle = +PI/2 points right (3-o'clock), giving us the classic bottom-open
+ * semicircle gauge.
+ */
+const GAUGE_ANGLES: Record<string, { start: number; end: number }> = {
+    semicircle:   { start: -Math.PI / 2,       end: Math.PI / 2 },
+    threeQuarter: { start: -Math.PI * 3 / 4,   end: Math.PI * 3 / 4 },
+    arc:          { start: -Math.PI * 5 / 6,   end: Math.PI * 5 / 6 }
+};
+
+interface ParsedData {
+    value: number;
+    target: number | null;
+    min: number;
+    max: number;
+}
+
+export class Visual implements IVisual {
+    private target: HTMLElement;
+    private host: IVisualHost;
+    private eventService: IVisualEventService;
+    private selectionManager: ISelectionManager;
+    private localizationManager: ILocalizationManager;
+    private formattingSettings: VisualFormattingSettingsModel;
+    private formattingSettingsService: FormattingSettingsService;
+
+    private tooltipService: ITooltipService;
+
+    // Tooltip data for current render
+    private currentTooltipItems: VisualTooltipDataItem[] = [];
+
+    // High contrast support
+    private isHighContrast: boolean = false;
+    private hcForeground: string = "";
+    private hcBackground: string = "";
+
+    private svg: Selection<SVGSVGElement, unknown, null, undefined>;
+    private gaugeGroup: Selection<SVGGElement, unknown, null, undefined>;
+
+    // Persistent SVG selections — created once, updated on each render
+    private borderPath: Selection<SVGPathElement, unknown, null, undefined>;
+    private zone1Path: Selection<SVGPathElement, unknown, null, undefined>;
+    private zone2Path: Selection<SVGPathElement, unknown, null, undefined>;
+    private zone3Path: Selection<SVGPathElement, unknown, null, undefined>;
+    private valuePath: Selection<SVGPathElement, unknown, null, undefined>;
+    private targetLine: Selection<SVGLineElement, unknown, null, undefined>;
+    private targetNeedle: Selection<SVGPathElement, unknown, null, undefined>;
+    private needleHub: Selection<SVGCircleElement, unknown, null, undefined>;
+    private targetMarker: Selection<SVGCircleElement, unknown, null, undefined>;
+    private valueText: Selection<SVGTextElement, unknown, null, undefined>;
+    private labelText: Selection<SVGTextElement, unknown, null, undefined>;
+    private emptyText: Selection<SVGTextElement, unknown, null, undefined>;
+
+    /** Stores previous value-arc end angle so animation can tween from it */
+    private previousValueAngle: number | null = null;
+
+    constructor(options: VisualConstructorOptions) {
+        this.formattingSettingsService = new FormattingSettingsService();
+        this.target = options.element;
+        this.host = options.host;
+        this.eventService = options.host.eventService;
+        this.selectionManager = options.host.createSelectionManager();
+        this.localizationManager = options.host.createLocalizationManager();
+        this.tooltipService = options.host.tooltipService;
+
+        // Context menu on right-click
+        this.target.addEventListener("contextmenu", (e: MouseEvent) => {
+            this.selectionManager.showContextMenu({}, { x: e.clientX, y: e.clientY });
+            e.preventDefault();
+        });
+
+        // Tooltip on hover
+        this.target.addEventListener("mousemove", (e: MouseEvent) => {
+            if (this.currentTooltipItems.length > 0) {
+                this.tooltipService.show({
+                    coordinates: [e.clientX, e.clientY],
+                    isTouchEvent: false,
+                    dataItems: this.currentTooltipItems,
+                    identities: []
+                });
+            }
+        });
+        this.target.addEventListener("mouseleave", () => {
+            this.tooltipService.hide({ isTouchEvent: false, immediately: false });
+        });
+
+        // Root SVG fills the Power BI tile
+        this.svg = select(this.target)
+            .append("svg")
+            .classed("zone-gauge-svg", true);
+
+        this.gaugeGroup = this.svg.append("g").classed("gauge-group", true);
+
+        // Border arc (behind everything)
+        this.borderPath = this.gaugeGroup.append("path").classed("border-arc", true);
+
+        // Zone background arcs (drawn at reduced opacity)
+        this.zone1Path = this.gaugeGroup.append("path").classed("zone-arc zone-1", true);
+        this.zone2Path = this.gaugeGroup.append("path").classed("zone-arc zone-2", true);
+        this.zone3Path = this.gaugeGroup.append("path").classed("zone-arc zone-3", true);
+
+        // Value overlay arc (full opacity, slightly inset)
+        this.valuePath = this.gaugeGroup.append("path").classed("value-arc", true);
+
+        // Value needle (tachometer style, from centre)
+        this.targetNeedle = this.gaugeGroup.append("path").classed("value-needle", true);
+        this.needleHub = this.gaugeGroup.append("circle").classed("needle-hub", true);
+
+        // Target indicators
+        this.targetLine = this.gaugeGroup.append("line").classed("target-line", true);
+        this.targetMarker = this.gaugeGroup.append("circle").classed("target-marker", true);
+
+        // Text elements
+        this.valueText = this.gaugeGroup.append("text").classed("value-text", true);
+        this.labelText = this.gaugeGroup.append("text").classed("label-text", true);
+        this.emptyText = this.gaugeGroup.append("text").classed("empty-text", true);
+    }
+
+    public update(options: VisualUpdateOptions): void {
+        this.eventService.renderingStarted(options);
+
+        try {
+            // High contrast detection
+            const colorPalette = this.host.colorPalette as ISandboxExtendedColorPalette;
+            this.isHighContrast = !!(colorPalette && colorPalette.isHighContrast);
+            if (this.isHighContrast) {
+                this.hcForeground = colorPalette.foreground.value;
+                this.hcBackground = colorPalette.background.value;
+            }
+
+            const dataView: DataView = options.dataViews && options.dataViews[0];
+            this.formattingSettings = this.formattingSettingsService.populateFormattingSettingsModel(
+                VisualFormattingSettingsModel, dataView
+            );
+
+            const width = options.viewport.width;
+            const height = options.viewport.height;
+
+            this.svg.attr("width", width).attr("height", height);
+
+            // ── Parse data ──────────────────────────────────────────────
+            const parsed = this.parseData(dataView);
+
+            if (parsed === null) {
+                this.currentTooltipItems = [];
+                this.renderEmpty(width, height);
+                this.eventService.renderingFinished(options);
+                return;
+            }
+
+            this.emptyText.style("display", "none");
+
+            // ── Settings shortcuts ──────────────────────────────────────
+            const gaugeCfg  = this.formattingSettings.gaugeSettingsCard;
+            const zonesCfg  = this.formattingSettings.zonesCard;
+            const targetCfg = this.formattingSettings.targetSettingsCard;
+            const valueCfg  = this.formattingSettings.valueDisplayCard;
+
+            const gaugeType     = gaugeCfg.gaugeType.value.value as string;
+            const thickness     = Math.max(4, gaugeCfg.thickness.value);
+            const animDuration  = Math.max(0, gaugeCfg.animationDuration.value);
+
+            const angles = GAUGE_ANGLES[gaugeType] || GAUGE_ANGLES.semicircle;
+            const startAngle = angles.start;
+            const endAngle   = angles.end;
+
+            const minVal = parsed.min;
+            const maxVal = Math.max(parsed.max, minVal + 1); // prevent zero-range
+            const currentVal = clamp(parsed.value, minVal, maxVal);
+
+            // Zone boundaries clamped to scale range
+            const zone1End = clamp(zonesCfg.zone1End.value, minVal, maxVal);
+            const zone2End = clamp(zonesCfg.zone2End.value, zone1End, maxVal);
+
+            // ── Responsive layout ───────────────────────────────────────
+            const padding = 12;
+            const textSpace = 52; // room for value + label text below the arc centre
+            const isSemicircle = gaugeType === "semicircle";
+
+            // For a semicircle the arc occupies half the circle height.
+            // For three-quarter / arc gauges the bottom extends further.
+            const verticalFactor = isSemicircle ? 2.0 : 1.35;
+            const maxRadiusFromHeight = ((height - padding * 2 - textSpace) * verticalFactor) / 2;
+            const maxRadiusFromWidth  = (width - padding * 2) / 2;
+            const radius = Math.max(24, Math.min(maxRadiusFromWidth, maxRadiusFromHeight));
+
+            const innerRadius = Math.max(0, radius - thickness);
+            const outerRadius = radius;
+
+            // Centre the gauge group
+            const cx = width / 2;
+            // For semicircle, centre vertically so the flat bottom + text fits.
+            // For wider arcs, shift up proportionally.
+            const cy = isSemicircle
+                ? padding + radius
+                : padding + radius + thickness * 0.5;
+
+            this.gaugeGroup.attr("transform", `translate(${cx},${cy})`);
+
+            // ── Angle scale ─────────────────────────────────────────────
+            const angleScale = scaleLinear()
+                .domain([minVal, maxVal])
+                .range([startAngle, endAngle])
+                .clamp(true);
+
+            const arcGen = d3arc();
+
+            // ── Border arc ───────────────────────────────────────────────
+            if (gaugeCfg.showBorder.value) {
+                const bw = Math.max(1, gaugeCfg.borderWidth.value);
+                const bColor = this.isHighContrast ? this.hcForeground : gaugeCfg.borderColor.value.value;
+                this.borderPath
+                    .attr("d", arcGen({
+                        innerRadius: innerRadius,
+                        outerRadius: outerRadius,
+                        startAngle: startAngle,
+                        endAngle: endAngle
+                    }))
+                    .attr("fill", "none")
+                    .attr("stroke", bColor)
+                    .attr("stroke-width", bw)
+                    .attr("opacity", 1)
+                    .style("display", null);
+            } else {
+                this.borderPath.style("display", "none");
+            }
+
+            // ── High contrast overrides for zone colors ──────────────────
+            const z1Color = this.isHighContrast ? this.hcForeground : zonesCfg.zone1Color.value.value;
+            const z2Color = this.isHighContrast ? this.hcForeground : zonesCfg.zone2Color.value.value;
+            const z3Color = this.isHighContrast ? this.hcForeground : zonesCfg.zone3Color.value.value;
+
+            // ── Zone background arcs ────────────────────────────────────
+            this.drawArc(this.zone1Path, arcGen, innerRadius, outerRadius,
+                startAngle, angleScale(zone1End),
+                z1Color, this.isHighContrast ? 0.5 : 0.3);
+
+            this.drawArc(this.zone2Path, arcGen, innerRadius, outerRadius,
+                angleScale(zone1End), angleScale(zone2End),
+                z2Color, this.isHighContrast ? 0.5 : 0.3);
+
+            this.drawArc(this.zone3Path, arcGen, innerRadius, outerRadius,
+                angleScale(zone2End), endAngle,
+                z3Color, this.isHighContrast ? 0.5 : 0.3);
+
+            // ── Value colour (matches whichever zone the needle is in) ──
+            let valueColor: string;
+            if (currentVal <= zone1End) {
+                valueColor = z1Color;
+            } else if (currentVal <= zone2End) {
+                valueColor = z2Color;
+            } else {
+                valueColor = z3Color;
+            }
+
+            // ── Value indicator (arc, needle, or both) ─────────────────
+            const valueStyle = (valueCfg.valueStyle.value?.value as string) || "arc";
+            const valueInner = innerRadius + 2;
+            const valueOuter = outerRadius - 2;
+            const valueEndAngle = angleScale(currentVal);
+
+            const showArc = valueStyle === "arc" || valueStyle === "both";
+            const showNeedle = valueStyle === "needle" || valueStyle === "both";
+
+            // Value arc
+            if (showArc) {
+                if (animDuration > 0) {
+                    const prevAngle = this.previousValueAngle ?? startAngle;
+                    (this.valuePath as any)
+                        .attr("fill", valueColor)
+                        .attr("opacity", 1)
+                        .style("display", null)
+                        .transition()
+                        .duration(animDuration)
+                        .attrTween("d", () => {
+                            const interp = interpolate(prevAngle, valueEndAngle);
+                            return (t: number) => {
+                                return arcGen({
+                                    innerRadius: valueInner,
+                                    outerRadius: valueOuter,
+                                    startAngle: startAngle,
+                                    endAngle: interp(t)
+                                }) || "";
+                            };
+                        });
+                } else {
+                    this.valuePath
+                        .attr("d", arcGen({
+                            innerRadius: valueInner,
+                            outerRadius: valueOuter,
+                            startAngle: startAngle,
+                            endAngle: valueEndAngle
+                        }))
+                        .attr("fill", valueColor)
+                        .attr("opacity", 1)
+                        .style("display", null);
+                }
+            } else {
+                this.valuePath.style("display", "none");
+            }
+            this.previousValueAngle = valueEndAngle;
+
+            // Value needle (tachometer style from centre)
+            if (showNeedle) {
+                const customNeedleColor = valueCfg.needleColor.value.value;
+                const nColor = this.isHighContrast ? this.hcForeground
+                    : (customNeedleColor && customNeedleColor.length > 0 ? customNeedleColor : valueColor);
+                const needleLen = outerRadius + 4;
+                const needleWidth = Math.max(3, thickness * 0.15);
+                const hubRadius = Math.max(5, thickness * 0.3);
+
+                // Needle tip
+                const tipX = needleLen * Math.sin(valueEndAngle);
+                const tipY = -needleLen * Math.cos(valueEndAngle);
+
+                // Needle base (perpendicular to needle direction, at centre)
+                const perpAngle = valueEndAngle + Math.PI / 2;
+                const bx1 = needleWidth * Math.sin(perpAngle);
+                const by1 = -needleWidth * Math.cos(perpAngle);
+                const bx2 = -needleWidth * Math.sin(perpAngle);
+                const by2 = needleWidth * Math.cos(perpAngle);
+
+                this.targetNeedle
+                    .attr("d", `M ${bx1} ${by1} L ${tipX} ${tipY} L ${bx2} ${by2} Z`)
+                    .attr("fill", nColor)
+                    .style("display", null);
+
+                this.needleHub
+                    .attr("cx", 0).attr("cy", 0)
+                    .attr("r", hubRadius)
+                    .attr("fill", nColor)
+                    .style("display", null);
+            } else {
+                this.targetNeedle.style("display", "none");
+                this.needleHub.style("display", "none");
+            }
+
+            // ── Target marker ───────────────────────────────────────────
+            const showTarget = targetCfg.showTarget.value
+                && parsed.target !== null
+                && (targetCfg.targetStyle.value.value as string) !== "none";
+
+            if (showTarget) {
+                const targetAngle = angleScale(clamp(parsed.target!, minVal, maxVal));
+                const tColor = this.isHighContrast ? this.hcForeground : targetCfg.targetColor.value.value;
+                const tStyle = targetCfg.targetStyle.value.value as string;
+
+                this.targetLine.style("display", "none");
+                this.targetMarker.style("display", "none");
+
+                if (tStyle === "line") {
+                    const x1 = (innerRadius - 4) * Math.sin(targetAngle);
+                    const y1 = -(innerRadius - 4) * Math.cos(targetAngle);
+                    const x2 = (outerRadius + 4) * Math.sin(targetAngle);
+                    const y2 = -(outerRadius + 4) * Math.cos(targetAngle);
+
+                    this.targetLine
+                        .attr("x1", x1).attr("y1", y1)
+                        .attr("x2", x2).attr("y2", y2)
+                        .attr("stroke", tColor)
+                        .attr("stroke-width", 2.5)
+                        .style("display", null);
+                } else if (tStyle === "marker") {
+                    const mx = (outerRadius + 3) * Math.sin(targetAngle);
+                    const my = -(outerRadius + 3) * Math.cos(targetAngle);
+
+                    this.targetMarker
+                        .attr("cx", mx).attr("cy", my)
+                        .attr("r", 5)
+                        .attr("fill", tColor)
+                        .style("display", null);
+                }
+            } else {
+                this.targetLine.style("display", "none");
+                this.targetMarker.style("display", "none");
+            }
+
+            // ── Value text ──────────────────────────────────────────────
+            const autoValueFontSize = Math.max(12, Math.min(radius * 0.35, 48));
+            const valueFontSize = valueCfg.valueFontSize.value > 0
+                ? valueCfg.valueFontSize.value
+                : autoValueFontSize;
+            const textYBase = isSemicircle ? 8 : radius * 0.15 + 8;
+
+            // Use custom color if set, otherwise fall back to zone color
+            const customValueColor = valueCfg.valueColor.value.value;
+            const effectiveValueColor = this.isHighContrast ? this.hcForeground
+                : (customValueColor && customValueColor.length > 0 ? customValueColor : valueColor);
+
+            if (valueCfg.showValue.value) {
+                const format = valueCfg.valueFormat.value.value as string;
+                const decimals = valueCfg.decimalPlaces.value;
+                const displayStr = format === "percent"
+                    ? currentVal.toFixed(decimals) + "%"
+                    : currentVal.toFixed(decimals);
+
+                this.valueText
+                    .attr("x", 0)
+                    .attr("y", textYBase)
+                    .attr("text-anchor", "middle")
+                    .attr("dominant-baseline", "hanging")
+                    .style("font-size", valueFontSize + "px")
+                    .style("font-weight", "700")
+                    .style("fill", effectiveValueColor)
+                    .text(displayStr)
+                    .style("display", null);
+            } else {
+                this.valueText.style("display", "none");
+            }
+
+            // ── Zone label ──────────────────────────────────────────────
+            if (valueCfg.showLabel.value) {
+                let zoneLabel: string;
+                if (currentVal <= zone1End) {
+                    zoneLabel = this.localizationManager.getDisplayName("Visual_Zone_Poor");
+                } else if (currentVal <= zone2End) {
+                    zoneLabel = this.localizationManager.getDisplayName("Visual_Zone_Acceptable");
+                } else {
+                    zoneLabel = this.localizationManager.getDisplayName("Visual_Zone_Good");
+                }
+
+                const autoLabelFontSize = Math.max(10, Math.min(radius * 0.16, 20));
+                const labelFontSize = valueCfg.labelFontSize.value > 0
+                    ? valueCfg.labelFontSize.value
+                    : autoLabelFontSize;
+                const labelY = textYBase + valueFontSize + 4;
+
+                const customLabelColor = valueCfg.labelColor.value.value;
+                const effectiveLabelColor = this.isHighContrast ? this.hcForeground
+                    : (customLabelColor && customLabelColor.length > 0 ? customLabelColor : valueColor);
+
+                this.labelText
+                    .attr("x", 0)
+                    .attr("y", labelY)
+                    .attr("text-anchor", "middle")
+                    .attr("dominant-baseline", "hanging")
+                    .style("font-size", labelFontSize + "px")
+                    .style("font-weight", "500")
+                    .style("fill", effectiveLabelColor)
+                    .text(zoneLabel)
+                    .style("display", null);
+            } else {
+                this.labelText.style("display", "none");
+            }
+
+            // Build tooltip data for current state
+            const format = valueCfg.valueFormat.value.value as string;
+            const decimals = valueCfg.decimalPlaces.value;
+            const tooltipVal = format === "percent"
+                ? currentVal.toFixed(decimals) + "%"
+                : currentVal.toFixed(decimals);
+
+            let zoneName: string;
+            if (currentVal <= zone1End) {
+                zoneName = "Poor";
+            } else if (currentVal <= zone2End) {
+                zoneName = "Acceptable";
+            } else {
+                zoneName = "Good";
+            }
+
+            this.currentTooltipItems = [
+                { displayName: "Value", value: tooltipVal },
+                { displayName: "Zone", value: zoneName }
+            ];
+            if (parsed.target !== null) {
+                const targetStr = format === "percent"
+                    ? parsed.target.toFixed(decimals) + "%"
+                    : parsed.target.toFixed(decimals);
+                this.currentTooltipItems.push({ displayName: "Target", value: targetStr });
+            }
+
+            this.eventService.renderingFinished(options);
+        } catch (e) {
+            this.eventService.renderingFailed(options, String(e));
+        }
+    }
+
+    // ── Helpers ──────────────────────────────────────────────────────────
+
+    /** Draw a static arc segment */
+    private drawArc(
+        pathSel: Selection<SVGPathElement, unknown, null, undefined>,
+        arcGen: any,
+        innerRadius: number,
+        outerRadius: number,
+        sa: number,
+        ea: number,
+        fill: string,
+        opacity: number
+    ): void {
+        pathSel
+            .attr("d", arcGen({ innerRadius, outerRadius, startAngle: sa, endAngle: ea }))
+            .attr("fill", fill)
+            .attr("opacity", opacity)
+            .style("display", null);
+    }
+
+    /** Parse value, target, min, max from categorical dataView by role name */
+    private parseData(dataView: DataView): ParsedData | null {
+        if (!dataView || !dataView.categorical || !dataView.categorical.values) {
+            return null;
+        }
+
+        const columns = dataView.categorical.values;
+        let value: number | null = null;
+        let target: number | null = null;
+        let min: number | null = null;
+        let max: number | null = null;
+
+        for (let i = 0; i < columns.length; i++) {
+            const roles = columns[i].source.roles;
+            const raw = columns[i].values[0];
+
+            if (roles && roles["value"]) {
+                value = this.toNum(raw);
+            }
+            if (roles && roles["target"]) {
+                target = this.toNum(raw);
+            }
+            if (roles && roles["minimum"]) {
+                min = this.toNum(raw);
+            }
+            if (roles && roles["maximum"]) {
+                max = this.toNum(raw);
+            }
+        }
+
+        if (value === null) return null;
+
+        return {
+            value,
+            target,
+            min: min ?? 0,
+            max: max ?? 100
+        };
+    }
+
+    /** Safely coerce to number */
+    private toNum(raw: any): number | null {
+        if (raw == null) return null;
+        const n = Number(raw);
+        return isNaN(n) ? null : n;
+    }
+
+    /** Empty state */
+    private renderEmpty(width: number, height: number): void {
+        this.borderPath.style("display", "none");
+        this.zone1Path.style("display", "none");
+        this.zone2Path.style("display", "none");
+        this.zone3Path.style("display", "none");
+        this.valuePath.style("display", "none");
+        this.targetLine.style("display", "none");
+        this.targetNeedle.style("display", "none");
+        this.needleHub.style("display", "none");
+        this.targetMarker.style("display", "none");
+        this.valueText.style("display", "none");
+        this.labelText.style("display", "none");
+        this.previousValueAngle = null;
+
+        this.gaugeGroup.attr("transform", `translate(${width / 2},${height / 2})`);
+        this.emptyText
+            .attr("x", 0)
+            .attr("y", 0)
+            .attr("text-anchor", "middle")
+            .attr("dominant-baseline", "middle")
+            .style("font-size", "14px")
+            .style("fill", this.isHighContrast ? this.hcForeground : "#999999")
+            .text(this.localizationManager.getDisplayName("Visual_EmptyText"))
+            .style("display", null);
+    }
+
+    public destroy(): void {
+        // Clean up DOM refs and event listeners
+        if (this.svg) {
+            this.svg.remove();
+        }
+        this.target = null;
+        this.svg = null;
+        this.gaugeGroup = null;
+        this.borderPath = null;
+        this.zone1Path = null;
+        this.zone2Path = null;
+        this.zone3Path = null;
+        this.valuePath = null;
+        this.targetLine = null;
+        this.targetNeedle = null;
+        this.needleHub = null;
+        this.targetMarker = null;
+        this.valueText = null;
+        this.labelText = null;
+        this.emptyText = null;
+    }
+
+    public getFormattingModel(): powerbi.visuals.FormattingModel {
+        return this.formattingSettingsService.buildFormattingModel(this.formattingSettings);
+    }
+}
