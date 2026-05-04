@@ -1,6 +1,12 @@
 {
     "dataRoles": [
         {
+            "displayName": "Category",
+            "name": "category",
+            "description": "Optional grouping column. When bound, clicking the gauge filters other visuals by this category.",
+            "kind": "Grouping"
+        },
+        {
             "displayName": "Value",
             "name": "value",
             "kind": "Measure",
@@ -9,6 +15,13 @@
         {
             "displayName": "Target",
             "name": "target",
+            "kind": "Measure",
+            "requiredTypes": [{ "numeric": true }]
+        },
+        {
+            "displayName": "Comparison",
+            "name": "comparison",
+            "description": "Optional secondary value (e.g. previous period) shown as a marker on the arc.",
             "kind": "Measure",
             "requiredTypes": [{ "numeric": true }]
         },
@@ -26,6 +39,20 @@
         }
     ],
     "objects": {
+        "titleSettings": {
+            "displayName": "Visual Title",
+            "properties": {
+                "showTitle": { "displayName": "Show Title", "type": { "bool": true } },
+                "titleText": { "displayName": "Title Text", "type": { "text": true } },
+                "titleFontFamily": { "displayName": "Font Family", "type": { "formatting": { "fontFamily": true } } },
+                "titleFontSize": { "displayName": "Font Size", "type": { "formatting": { "fontSize": true } } },
+                "titleBold": { "displayName": "Bold", "type": { "bool": true } },
+                "titleItalic": { "displayName": "Italic", "type": { "bool": true } },
+                "titleUnderline": { "displayName": "Underline", "type": { "bool": true } },
+                "titleAlign": { "displayName": "Alignment", "type": { "formatting": { "alignment": true } } },
+                "titleColor": { "displayName": "Font Color", "type": { "fill": { "solid": { "color": true } } } }
+            }
+        },
         "gaugeSettings": {
             "properties": {
                 "gaugeType": {
@@ -55,22 +82,46 @@
             }
         },
         "zones": {
+            "displayName": "Zones",
             "properties": {
-                "zone1End": {
-                    "type": { "numeric": true }
+                "zone1End": { "displayName": "Zone 1 End", "type": { "numeric": true } },
+                "zone1Color": { "displayName": "Zone 1 Color (Danger)", "type": { "fill": { "solid": { "color": true } } } },
+                "zone2End": { "displayName": "Zone 2 End", "type": { "numeric": true } },
+                "zone2Color": { "displayName": "Zone 2 Color (Warning)", "type": { "fill": { "solid": { "color": true } } } },
+                "zone3Color": { "displayName": "Zone 3 Color (Success)", "type": { "fill": { "solid": { "color": true } } } },
+                "useGradient": { "displayName": "Gradient Zone Fills", "type": { "bool": true } },
+                "showZoneLabels": { "displayName": "Show Zone Callouts", "type": { "bool": true } },
+                "zoneLabelPosition": {
+                    "displayName": "Callout Position",
+                    "type": {
+                        "enumeration": [
+                            { "displayName": "On the arc band", "value": "band" },
+                            { "displayName": "Outside the outer edge", "value": "outerEdge" },
+                            { "displayName": "Inside the inner edge", "value": "innerEdge" }
+                        ]
+                    }
                 },
-                "zone1Color": {
-                    "type": { "fill": { "solid": { "color": true } } }
+                "zone1Label": { "displayName": "Zone 1 Callout", "type": { "text": true } },
+                "zone2Label": { "displayName": "Zone 2 Callout", "type": { "text": true } },
+                "zone3Label": { "displayName": "Zone 3 Callout", "type": { "text": true } },
+                "zoneLabelFontSize": { "displayName": "Callout Font Size", "type": { "numeric": true } }
+            }
+        },
+        "comparisonSettings": {
+            "displayName": "Comparison",
+            "properties": {
+                "showComparison": { "displayName": "Show Comparison Marker", "type": { "bool": true } },
+                "comparisonStyle": {
+                    "displayName": "Comparison Style",
+                    "type": {
+                        "enumeration": [
+                            { "displayName": "Line", "value": "line" },
+                            { "displayName": "Marker", "value": "marker" }
+                        ]
+                    }
                 },
-                "zone2End": {
-                    "type": { "numeric": true }
-                },
-                "zone2Color": {
-                    "type": { "fill": { "solid": { "color": true } } }
-                },
-                "zone3Color": {
-                    "type": { "fill": { "solid": { "color": true } } }
-                }
+                "comparisonColor": { "displayName": "Comparison Color", "type": { "fill": { "solid": { "color": true } } } },
+                "comparisonLabel": { "displayName": "Comparison Label", "type": { "text": true } }
             }
         },
         "targetSettings": {
@@ -142,17 +193,24 @@
         {
             "conditions": [
                 {
+                    "category": { "max": 1 },
                     "value": { "max": 1 },
                     "target": { "max": 1 },
+                    "comparison": { "max": 1 },
                     "minimum": { "max": 1 },
                     "maximum": { "max": 1 }
                 }
             ],
             "categorical": {
+                "categories": {
+                    "for": { "in": "category" },
+                    "dataReductionAlgorithm": { "top": { "count": 30000 } }
+                },
                 "values": {
                     "select": [
                         { "bind": { "to": "value" } },
                         { "bind": { "to": "target" } },
+                        { "bind": { "to": "comparison" } },
                         { "bind": { "to": "minimum" } },
                         { "bind": { "to": "maximum" } }
                     ]

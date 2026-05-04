@@ -15,13 +15,14 @@ import IVisual = powerbi.extensibility.visual.IVisual;
 import IVisualEventService = powerbi.extensibility.IVisualEventService;
 import IVisualHost = powerbi.extensibility.visual.IVisualHost;
 import ISelectionManager = powerbi.extensibility.ISelectionManager;
+import ISelectionId = powerbi.visuals.ISelectionId;
 import ILocalizationManager = powerbi.extensibility.ILocalizationManager;
 import ISandboxExtendedColorPalette = powerbi.extensibility.ISandboxExtendedColorPalette;
 import ITooltipService = powerbi.extensibility.ITooltipService;
 import VisualTooltipDataItem = powerbi.extensibility.VisualTooltipDataItem;
 import DataView = powerbi.DataView;
 
-import { VisualFormattingSettingsModel } from "./settings";
+import { VisualFormattingSettingsModel, textAlignFor } from "./settings";
 import { clamp, CODEX_TOKENS } from "./utils";
 
 /**
@@ -47,8 +48,11 @@ const GAUGE_ANGLES: Record<string, { start: number; end: number }> = {
 interface ParsedData {
     value: number;
     target: number | null;
+    comparison: number | null;
     min: number;
     max: number;
+    categoryLabel: string | null;
+    selectionId: ISelectionId | null;
 }
 
 export class Visual implements IVisual {
@@ -71,6 +75,8 @@ export class Visual implements IVisual {
     private hcBackground: string = "";
 
     private svg: Selection<SVGSVGElement, unknown, null, undefined>;
+    private defs: Selection<SVGDefsElement, unknown, null, undefined>;
+    private titleEl: Selection<SVGTextElement, unknown, null, undefined>;
     private gaugeGroup: Selection<SVGGElement, unknown, null, undefined>;
 
     // Persistent SVG selections — created once, updated on each render
@@ -83,12 +89,21 @@ export class Visual implements IVisual {
     private targetNeedle: Selection<SVGPathElement, unknown, null, undefined>;
     private needleHub: Selection<SVGCircleElement, unknown, null, undefined>;
     private targetMarker: Selection<SVGCircleElement, unknown, null, undefined>;
+    private compLine: Selection<SVGLineElement, unknown, null, undefined>;
+    private compMarker: Selection<SVGCircleElement, unknown, null, undefined>;
+    private zone1Label: Selection<SVGTextElement, unknown, null, undefined>;
+    private zone2Label: Selection<SVGTextElement, unknown, null, undefined>;
+    private zone3Label: Selection<SVGTextElement, unknown, null, undefined>;
     private valueText: Selection<SVGTextElement, unknown, null, undefined>;
     private labelText: Selection<SVGTextElement, unknown, null, undefined>;
     private emptyText: Selection<SVGTextElement, unknown, null, undefined>;
 
     /** Stores previous value-arc end angle so animation can tween from it */
     private previousValueAngle: number | null = null;
+    /** Stores previous value (for counter animation) */
+    private previousValue: number | null = null;
+    /** Currently bound selection ID for click-to-filter */
+    private currentSelectionId: ISelectionId | null = null;
 
     constructor(options: VisualConstructorOptions) {
         this.formattingSettingsService = new FormattingSettingsService();
@@ -125,6 +140,20 @@ export class Visual implements IVisual {
             .append("svg")
             .classed("zone-gauge-svg", true);
 
+        // Click-to-filter (1180.2.2.3 Filter Out)
+        this.svg.on("click", (e: MouseEvent) => {
+            if (this.currentSelectionId) {
+                this.selectionManager.select(this.currentSelectionId, e.ctrlKey || e.metaKey);
+                e.stopPropagation();
+            }
+        });
+
+        this.defs = this.svg.append("defs");
+
+        // Iframe-internal title (Policy 1180.2.5 — title region must catch right-clicks
+        // inside the visual iframe; PBI auto-title strip is host chrome and absorbs them)
+        this.titleEl = this.svg.append("text").classed("zone-gauge-title", true);
+
         this.gaugeGroup = this.svg.append("g").classed("gauge-group", true);
 
         // Border arc (behind everything)
@@ -145,6 +174,15 @@ export class Visual implements IVisual {
         // Target indicators
         this.targetLine = this.gaugeGroup.append("line").classed("target-line", true);
         this.targetMarker = this.gaugeGroup.append("circle").classed("target-marker", true);
+
+        // Comparison indicators
+        this.compLine = this.gaugeGroup.append("line").classed("comparison-line", true);
+        this.compMarker = this.gaugeGroup.append("circle").classed("comparison-marker", true);
+
+        // Zone callout labels
+        this.zone1Label = this.gaugeGroup.append("text").classed("zone-callout zone-1-label", true);
+        this.zone2Label = this.gaugeGroup.append("text").classed("zone-callout zone-2-label", true);
+        this.zone3Label = this.gaugeGroup.append("text").classed("zone-callout zone-3-label", true);
 
         // Text elements
         this.valueText = this.gaugeGroup.append("text").classed("value-text", true);
@@ -186,11 +224,42 @@ export class Visual implements IVisual {
 
             this.emptyText.style("display", "none");
 
+            // Capture selection ID for click-to-filter (1180.2.2.3)
+            this.currentSelectionId = parsed.selectionId;
+            this.svg.style("cursor", parsed.selectionId ? "pointer" : "default");
+
             // ── Settings shortcuts ──────────────────────────────────────
+            const titleCfg  = this.formattingSettings.titleSettingsCard;
             const gaugeCfg  = this.formattingSettings.gaugeSettingsCard;
             const zonesCfg  = this.formattingSettings.zonesCard;
             const targetCfg = this.formattingSettings.targetSettingsCard;
+            const compCfg   = this.formattingSettings.comparisonSettingsCard;
             const valueCfg  = this.formattingSettings.valueDisplayCard;
+
+            // ── Visual Title (iframe-internal, Policy 1180.2.5) ─────────
+            const showTitle = !!titleCfg.showTitle.value && !!titleCfg.titleText.value;
+            const titleFontSize = titleCfg.titleFontSize.value || 14;
+            const titleHeight = showTitle ? titleFontSize + 14 : 0;
+            if (showTitle) {
+                const tAlign = String((titleCfg as any).titleAlign?.value || "left");
+                const ta = textAlignFor(tAlign);
+                const x = ta === "center" ? width / 2 : ta === "right" ? width - 8 : 8;
+                const anchor = ta === "center" ? "middle" : ta === "right" ? "end" : "start";
+                this.titleEl
+                    .attr("x", x)
+                    .attr("y", titleFontSize + 4)
+                    .attr("text-anchor", anchor)
+                    .style("font-family", titleCfg.titleFontFamily.value || "Segoe UI, sans-serif")
+                    .style("font-size", titleFontSize + "px")
+                    .style("font-weight", titleCfg.titleBold.value ? "700" : "400")
+                    .style("font-style", titleCfg.titleItalic.value ? "italic" : "normal")
+                    .style("text-decoration", titleCfg.titleUnderline.value ? "underline" : "none")
+                    .style("fill", this.isHighContrast ? this.hcForeground : titleCfg.titleColor.value.value)
+                    .text(titleCfg.titleText.value)
+                    .style("display", null);
+            } else {
+                this.titleEl.style("display", "none");
+            }
 
             const gaugeType     = gaugeCfg.gaugeType.value.value as string;
             const thickness     = Math.max(4, gaugeCfg.thickness.value);
@@ -215,21 +284,28 @@ export class Visual implements IVisual {
 
             // For a semicircle the arc occupies half the circle height.
             // For three-quarter / arc gauges the bottom extends further.
+            // Reserve buffer when zone callouts sit outside the outer edge so they don't clip
+            const labelPosEarly = String(zonesCfg.zoneLabelPosition.value?.value || "band");
+            const calloutFontSizeEarly = zonesCfg.zoneLabelFontSize.value > 0
+                ? zonesCfg.zoneLabelFontSize.value
+                : 12;
+            const outerLabelBuffer = (zonesCfg.showZoneLabels.value && labelPosEarly === "outerEdge")
+                ? Math.max(18, calloutFontSizeEarly + 8)
+                : 0;
+
             const verticalFactor = isSemicircle ? 2.0 : 1.35;
-            const maxRadiusFromHeight = ((height - padding * 2 - textSpace) * verticalFactor) / 2;
-            const maxRadiusFromWidth  = (width - padding * 2) / 2;
+            const maxRadiusFromHeight = ((height - padding * 2 - textSpace - titleHeight - outerLabelBuffer) * verticalFactor) / 2;
+            const maxRadiusFromWidth  = (width - padding * 2 - outerLabelBuffer * 2) / 2;
             const radius = Math.max(24, Math.min(maxRadiusFromWidth, maxRadiusFromHeight));
 
             const innerRadius = Math.max(0, radius - thickness);
             const outerRadius = radius;
 
-            // Centre the gauge group
+            // Centre the gauge group (offset down by title height when title is shown)
             const cx = width / 2;
-            // For semicircle, centre vertically so the flat bottom + text fits.
-            // For wider arcs, shift up proportionally.
             const cy = isSemicircle
-                ? padding + radius
-                : padding + radius + thickness * 0.5;
+                ? padding + titleHeight + radius
+                : padding + titleHeight + radius + thickness * 0.5;
 
             this.gaugeGroup.attr("transform", `translate(${cx},${cy})`);
 
@@ -266,18 +342,32 @@ export class Visual implements IVisual {
             const z2Color = this.isHighContrast ? this.hcForeground : zonesCfg.zone2Color.value.value;
             const z3Color = this.isHighContrast ? this.hcForeground : zonesCfg.zone3Color.value.value;
 
+            // ── Gradient defs (rebuilt each render to honour colour changes) ──
+            this.defs.selectAll("*").remove();
+            const useGradient = !!zonesCfg.useGradient.value && !this.isHighContrast;
+            if (useGradient) {
+                this.buildZoneGradient("zone1-grad", z1Color);
+                this.buildZoneGradient("zone2-grad", z2Color);
+                this.buildZoneGradient("zone3-grad", z3Color);
+            }
+
             // ── Zone background arcs ────────────────────────────────────
+            const z1Fill = useGradient ? "url(#zone1-grad)" : z1Color;
+            const z2Fill = useGradient ? "url(#zone2-grad)" : z2Color;
+            const z3Fill = useGradient ? "url(#zone3-grad)" : z3Color;
+            const zoneOpacity = this.isHighContrast ? 0.5 : (useGradient ? 0.85 : 0.3);
+
             this.drawArc(this.zone1Path, arcGen, innerRadius, outerRadius,
                 startAngle, angleScale(zone1End),
-                z1Color, this.isHighContrast ? 0.5 : 0.3);
+                z1Fill, zoneOpacity);
 
             this.drawArc(this.zone2Path, arcGen, innerRadius, outerRadius,
                 angleScale(zone1End), angleScale(zone2End),
-                z2Color, this.isHighContrast ? 0.5 : 0.3);
+                z2Fill, zoneOpacity);
 
             this.drawArc(this.zone3Path, arcGen, innerRadius, outerRadius,
                 angleScale(zone2End), endAngle,
-                z3Color, this.isHighContrast ? 0.5 : 0.3);
+                z3Fill, zoneOpacity);
 
             // ── Value colour (matches whichever zone the needle is in) ──
             let valueColor: string;
@@ -336,7 +426,7 @@ export class Visual implements IVisual {
             }
             this.previousValueAngle = valueEndAngle;
 
-            // Value needle (tachometer style from centre)
+            // Value needle (tachometer style from centre, with eased rotation)
             if (showNeedle) {
                 const customNeedleColor = valueCfg.needleColor.value.value;
                 const nColor = this.isHighContrast ? this.hcForeground
@@ -345,21 +435,34 @@ export class Visual implements IVisual {
                 const needleWidth = Math.max(3, thickness * 0.15);
                 const hubRadius = Math.max(5, thickness * 0.3);
 
-                // Needle tip
-                const tipX = needleLen * Math.sin(valueEndAngle);
-                const tipY = -needleLen * Math.cos(valueEndAngle);
+                const buildNeedlePath = (a: number): string => {
+                    const tipX = needleLen * Math.sin(a);
+                    const tipY = -needleLen * Math.cos(a);
+                    const perp = a + Math.PI / 2;
+                    const bx1 = needleWidth * Math.sin(perp);
+                    const by1 = -needleWidth * Math.cos(perp);
+                    const bx2 = -needleWidth * Math.sin(perp);
+                    const by2 = needleWidth * Math.cos(perp);
+                    return `M ${bx1} ${by1} L ${tipX} ${tipY} L ${bx2} ${by2} Z`;
+                };
 
-                // Needle base (perpendicular to needle direction, at centre)
-                const perpAngle = valueEndAngle + Math.PI / 2;
-                const bx1 = needleWidth * Math.sin(perpAngle);
-                const by1 = -needleWidth * Math.cos(perpAngle);
-                const bx2 = -needleWidth * Math.sin(perpAngle);
-                const by2 = needleWidth * Math.cos(perpAngle);
-
-                this.targetNeedle
-                    .attr("d", `M ${bx1} ${by1} L ${tipX} ${tipY} L ${bx2} ${by2} Z`)
-                    .attr("fill", nColor)
-                    .style("display", null);
+                if (animDuration > 0) {
+                    const prev = this.previousValueAngle ?? startAngle;
+                    (this.targetNeedle as any)
+                        .attr("fill", nColor)
+                        .style("display", null)
+                        .transition()
+                        .duration(animDuration)
+                        .attrTween("d", () => {
+                            const interp = interpolate(prev, valueEndAngle);
+                            return (t: number) => buildNeedlePath(interp(t));
+                        });
+                } else {
+                    this.targetNeedle
+                        .attr("d", buildNeedlePath(valueEndAngle))
+                        .attr("fill", nColor)
+                        .style("display", null);
+                }
 
                 this.needleHub
                     .attr("cx", 0).attr("cy", 0)
@@ -411,6 +514,124 @@ export class Visual implements IVisual {
                 this.targetMarker.style("display", "none");
             }
 
+            // ── Comparison marker (e.g. previous period) ────────────────
+            const showComparison = compCfg.showComparison.value && parsed.comparison !== null;
+            if (showComparison) {
+                const compAngle = angleScale(clamp(parsed.comparison!, minVal, maxVal));
+                const cColor = this.isHighContrast ? this.hcForeground : compCfg.comparisonColor.value.value;
+                const cStyle = compCfg.comparisonStyle.value.value as string;
+
+                if (cStyle === "line") {
+                    const x1 = (innerRadius - 4) * Math.sin(compAngle);
+                    const y1 = -(innerRadius - 4) * Math.cos(compAngle);
+                    const x2 = (outerRadius + 4) * Math.sin(compAngle);
+                    const y2 = -(outerRadius + 4) * Math.cos(compAngle);
+
+                    this.compLine
+                        .attr("x1", x1).attr("y1", y1)
+                        .attr("x2", x2).attr("y2", y2)
+                        .attr("stroke", cColor)
+                        .attr("stroke-width", 2)
+                        .attr("stroke-dasharray", "3 2")
+                        .attr("opacity", 0.85)
+                        .style("display", null);
+                    this.compMarker.style("display", "none");
+                } else {
+                    const mx = (outerRadius + 6) * Math.sin(compAngle);
+                    const my = -(outerRadius + 6) * Math.cos(compAngle);
+
+                    this.compMarker
+                        .attr("cx", mx).attr("cy", my)
+                        .attr("r", 4.5)
+                        .attr("fill", "#ffffff")
+                        .attr("stroke", cColor)
+                        .attr("stroke-width", 2.5)
+                        .style("display", null);
+                    this.compLine.style("display", "none");
+                }
+            } else {
+                this.compLine.style("display", "none");
+                this.compMarker.style("display", "none");
+            }
+
+            // ── Zone callout labels ─────────────────────────────────────
+            // Three placement modes:
+            //   • "band"       — labels sit on the arc band itself, contrast text colour. Hidden if band < 14px.
+            //   • "outerEdge"  — labels sit just outside the outer edge in zone colour. Layout reserves buffer above.
+            //   • "innerEdge"  — labels sit just inside the inner edge (donut hole) in zone colour.
+            // All modes rotate text along the arc tangent so labels follow the curve.
+            if (zonesCfg.showZoneLabels.value) {
+                const bandWidth = outerRadius - innerRadius;
+                const labelPos = String(zonesCfg.zoneLabelPosition.value?.value || "band");
+                const minBandForLabel = 14;
+                const calloutFontSize = zonesCfg.zoneLabelFontSize.value > 0
+                    ? zonesCfg.zoneLabelFontSize.value
+                    : (labelPos === "band"
+                        ? Math.max(8, Math.min(bandWidth * 0.45, 12))
+                        : Math.max(9, Math.min(radius * 0.085, 13)));
+
+                let labelR: number;
+                if (labelPos === "band") {
+                    labelR = (innerRadius + outerRadius) / 2;
+                } else if (labelPos === "outerEdge") {
+                    labelR = outerRadius + Math.max(10, calloutFontSize * 0.85);
+                } else {
+                    // innerEdge — sit just inside the inner radius (in the donut hole)
+                    labelR = Math.max(20, innerRadius - Math.max(8, calloutFontSize * 0.75));
+                }
+
+                const placeCallout = (sel: Selection<SVGTextElement, unknown, null, undefined>,
+                                      text: string, sa: number, ea: number, zoneColor: string) => {
+                    if (!text) { sel.style("display", "none"); return; }
+                    if (labelPos === "band" && bandWidth < minBandForLabel) {
+                        sel.style("display", "none");
+                        return;
+                    }
+                    if (labelPos === "innerEdge" && innerRadius < 28) {
+                        // Donut hole too small — would overlap value text
+                        sel.style("display", "none");
+                        return;
+                    }
+                    const mid = (sa + ea) / 2;
+                    const x = labelR * Math.sin(mid);
+                    const y = -labelR * Math.cos(mid);
+
+                    // Rotate text to follow the arc tangent.
+                    let rotDeg = (mid * 180) / Math.PI;
+                    if (Math.cos(mid) < 0) rotDeg += 180;
+
+                    // band: contrast against fill. outerEdge / innerEdge: zone colour on transparent.
+                    const textColor = labelPos === "band"
+                        ? this.contrastTextColor(zoneColor)
+                        : zoneColor;
+
+                    sel
+                        .attr("x", 0).attr("y", 0)
+                        .attr("transform", `translate(${x},${y}) rotate(${rotDeg})`)
+                        .attr("text-anchor", "middle")
+                        .attr("dominant-baseline", "middle")
+                        .style("font-size", calloutFontSize + "px")
+                        .style("font-weight", labelPos === "band" ? "700" : "600")
+                        .style("letter-spacing", "0.5px")
+                        .style("text-transform", "uppercase")
+                        .style("fill", this.isHighContrast ? this.hcForeground : textColor)
+                        .style("opacity", labelPos === "band" ? 1 : 0.95)
+                        .style("pointer-events", "none")
+                        .text(text)
+                        .style("display", null);
+                };
+                placeCallout(this.zone1Label, zonesCfg.zone1Label.value || "",
+                    startAngle, angleScale(zone1End), z1Color);
+                placeCallout(this.zone2Label, zonesCfg.zone2Label.value || "",
+                    angleScale(zone1End), angleScale(zone2End), z2Color);
+                placeCallout(this.zone3Label, zonesCfg.zone3Label.value || "",
+                    angleScale(zone2End), endAngle, z3Color);
+            } else {
+                this.zone1Label.style("display", "none");
+                this.zone2Label.style("display", "none");
+                this.zone3Label.style("display", "none");
+            }
+
             // ── Value text ──────────────────────────────────────────────
             const autoValueFontSize = Math.max(12, Math.min(radius * 0.35, 48));
             const valueFontSize = valueCfg.valueFontSize.value > 0
@@ -426,9 +647,9 @@ export class Visual implements IVisual {
             if (valueCfg.showValue.value) {
                 const format = valueCfg.valueFormat.value.value as string;
                 const decimals = valueCfg.decimalPlaces.value;
-                const displayStr = format === "percent"
-                    ? currentVal.toFixed(decimals) + "%"
-                    : currentVal.toFixed(decimals);
+                const fmt = (n: number) => format === "percent"
+                    ? n.toFixed(decimals) + "%"
+                    : n.toFixed(decimals);
 
                 this.valueText
                     .attr("x", 0)
@@ -438,11 +659,27 @@ export class Visual implements IVisual {
                     .style("font-size", valueFontSize + "px")
                     .style("font-weight", "700")
                     .style("fill", effectiveValueColor)
-                    .text(displayStr)
                     .style("display", null);
+
+                // Counter animation: tween from previous value to current
+                if (animDuration > 0) {
+                    const prev = this.previousValue ?? currentVal;
+                    (this.valueText as any)
+                        .transition()
+                        .duration(animDuration)
+                        .tween("text", () => {
+                            const interp = interpolate(prev, currentVal);
+                            return (t: number) => {
+                                this.valueText.text(fmt(interp(t)));
+                            };
+                        });
+                } else {
+                    this.valueText.text(fmt(currentVal));
+                }
             } else {
                 this.valueText.style("display", "none");
             }
+            this.previousValue = currentVal;
 
             // ── Zone label ──────────────────────────────────────────────
             if (valueCfg.showLabel.value) {
@@ -495,15 +732,26 @@ export class Visual implements IVisual {
                 zoneName = "Good";
             }
 
-            this.currentTooltipItems = [
+            this.currentTooltipItems = [];
+            if (parsed.categoryLabel) {
+                this.currentTooltipItems.push({ displayName: "Category", value: parsed.categoryLabel });
+            }
+            this.currentTooltipItems.push(
                 { displayName: "Value", value: tooltipVal },
                 { displayName: "Zone", value: zoneName }
-            ];
+            );
             if (parsed.target !== null) {
                 const targetStr = format === "percent"
                     ? parsed.target.toFixed(decimals) + "%"
                     : parsed.target.toFixed(decimals);
                 this.currentTooltipItems.push({ displayName: "Target", value: targetStr });
+            }
+            if (parsed.comparison !== null) {
+                const compStr = format === "percent"
+                    ? parsed.comparison.toFixed(decimals) + "%"
+                    : parsed.comparison.toFixed(decimals);
+                const compLabel = compCfg.comparisonLabel.value || "Comparison";
+                this.currentTooltipItems.push({ displayName: compLabel, value: compStr });
             }
 
             this.eventService.renderingFinished(options);
@@ -513,6 +761,53 @@ export class Visual implements IVisual {
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────
+
+    /** Build a vertical linearGradient (lighter top, base colour bottom) for a zone fill */
+    private buildZoneGradient(id: string, baseColor: string): void {
+        const grad = this.defs.append("linearGradient")
+            .attr("id", id)
+            .attr("x1", "0%").attr("y1", "0%")
+            .attr("x2", "0%").attr("y2", "100%");
+        grad.append("stop").attr("offset", "0%")
+            .attr("stop-color", this.lighten(baseColor, 0.18))
+            .attr("stop-opacity", "1");
+        grad.append("stop").attr("offset", "100%")
+            .attr("stop-color", baseColor)
+            .attr("stop-opacity", "1");
+    }
+
+    /** Pick black or white text for legibility on a given background hex */
+    private contrastTextColor(hex: string): string {
+        try {
+            const m = /^#?([a-f0-9]{6})$/i.exec(hex);
+            if (!m) return "#1a1a2e";
+            const num = parseInt(m[1], 16);
+            const r = (num >> 16) & 0xff;
+            const g = (num >> 8) & 0xff;
+            const b = num & 0xff;
+            // Relative luminance per WCAG approximation
+            const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+            return lum > 0.55 ? "#1a1a2e" : "#ffffff";
+        } catch {
+            return "#1a1a2e";
+        }
+    }
+
+    /** Lighten a hex colour towards white by amt (0..1) */
+    private lighten(hex: string, amt: number): string {
+        try {
+            const m = /^#?([a-f0-9]{6})$/i.exec(hex);
+            if (!m) return hex;
+            const num = parseInt(m[1], 16);
+            const r = (num >> 16) & 0xff;
+            const g = (num >> 8) & 0xff;
+            const b = num & 0xff;
+            const mix = (c: number) => Math.round(c + (255 - c) * amt);
+            return `#${[mix(r), mix(g), mix(b)].map(c => c.toString(16).padStart(2, "0")).join("")}`;
+        } catch {
+            return hex;
+        }
+    }
 
     /** Draw a static arc segment */
     private drawArc(
@@ -532,7 +827,7 @@ export class Visual implements IVisual {
             .style("display", null);
     }
 
-    /** Parse value, target, min, max from categorical dataView by role name */
+    /** Parse value, target, comparison, min, max from categorical dataView by role name */
     private parseData(dataView: DataView): ParsedData | null {
         if (!dataView || !dataView.categorical || !dataView.categorical.values) {
             return null;
@@ -541,6 +836,7 @@ export class Visual implements IVisual {
         const columns = dataView.categorical.values;
         let value: number | null = null;
         let target: number | null = null;
+        let comparison: number | null = null;
         let min: number | null = null;
         let max: number | null = null;
 
@@ -554,6 +850,9 @@ export class Visual implements IVisual {
             if (roles && roles["target"]) {
                 target = this.toNum(raw);
             }
+            if (roles && roles["comparison"]) {
+                comparison = this.toNum(raw);
+            }
             if (roles && roles["minimum"]) {
                 min = this.toNum(raw);
             }
@@ -564,11 +863,31 @@ export class Visual implements IVisual {
 
         if (value === null) return null;
 
+        // Pull the (optional) category for filter-out + tooltip context
+        let categoryLabel: string | null = null;
+        let selectionId: ISelectionId | null = null;
+        const categories = dataView.categorical.categories;
+        if (categories && categories.length > 0 && categories[0].values && categories[0].values.length > 0) {
+            const cat = categories[0];
+            const raw = cat.values[0];
+            categoryLabel = raw == null ? null : String(raw);
+            try {
+                selectionId = this.host.createSelectionIdBuilder()
+                    .withCategory(cat, 0)
+                    .createSelectionId();
+            } catch {
+                selectionId = null;
+            }
+        }
+
         return {
             value,
             target,
+            comparison,
             min: min ?? 0,
-            max: max ?? 100
+            max: max ?? 100,
+            categoryLabel,
+            selectionId
         };
     }
 
@@ -581,6 +900,7 @@ export class Visual implements IVisual {
 
     /** Empty state */
     private renderEmpty(width: number, height: number): void {
+        this.titleEl.style("display", "none");
         this.borderPath.style("display", "none");
         this.zone1Path.style("display", "none");
         this.zone2Path.style("display", "none");
@@ -590,9 +910,16 @@ export class Visual implements IVisual {
         this.targetNeedle.style("display", "none");
         this.needleHub.style("display", "none");
         this.targetMarker.style("display", "none");
+        this.compLine.style("display", "none");
+        this.compMarker.style("display", "none");
+        this.zone1Label.style("display", "none");
+        this.zone2Label.style("display", "none");
+        this.zone3Label.style("display", "none");
         this.valueText.style("display", "none");
         this.labelText.style("display", "none");
         this.previousValueAngle = null;
+        this.previousValue = null;
+        this.currentSelectionId = null;
 
         this.gaugeGroup.attr("transform", `translate(${width / 2},${height / 2})`);
         this.emptyText
@@ -613,6 +940,8 @@ export class Visual implements IVisual {
         }
         this.target = null;
         this.svg = null;
+        this.defs = null;
+        this.titleEl = null;
         this.gaugeGroup = null;
         this.borderPath = null;
         this.zone1Path = null;
@@ -623,9 +952,15 @@ export class Visual implements IVisual {
         this.targetNeedle = null;
         this.needleHub = null;
         this.targetMarker = null;
+        this.compLine = null;
+        this.compMarker = null;
+        this.zone1Label = null;
+        this.zone2Label = null;
+        this.zone3Label = null;
         this.valueText = null;
         this.labelText = null;
         this.emptyText = null;
+        this.currentSelectionId = null;
     }
 
     public getFormattingModel(): powerbi.visuals.FormattingModel {

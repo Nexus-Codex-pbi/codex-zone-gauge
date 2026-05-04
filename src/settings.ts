@@ -10,6 +10,48 @@ import FormattingSettingsModel = formattingSettings.Model;
 
 const ConstantOrRule = powerbi.VisualEnumerationInstanceKinds.ConstantOrRule;
 
+function alignSlice(name: string, defaultValue: string = "left") {
+    return new formattingSettings.AlignmentGroup({
+        name, displayName: "Alignment",
+        mode: powerbi.visuals.AlignmentGroupMode.Horizonal,
+        value: defaultValue,
+    });
+}
+
+export function textAlignFor(v: string | undefined): string {
+    return v === "center" || v === "right" ? v : "left";
+}
+
+class TitleSettingsCard extends FormattingSettingsCard {
+    showTitle = new formattingSettings.ToggleSwitch({ name: "showTitle", displayName: "Show Title", value: false });
+    titleText = new formattingSettings.TextInput({ name: "titleText", displayName: "Title Text", placeholder: "Visual title", value: "" });
+
+    titleFontFamily = new formattingSettings.FontPicker({ name: "titleFontFamily", displayName: "Font Family", value: "Segoe UI, sans-serif" });
+    titleFontSize = new formattingSettings.NumUpDown({ name: "titleFontSize", displayName: "Font Size", value: 14 });
+    titleBold = new formattingSettings.ToggleSwitch({ name: "titleBold", displayName: "Bold", value: true });
+    titleItalic = new formattingSettings.ToggleSwitch({ name: "titleItalic", displayName: "Italic", value: false });
+    titleUnderline = new formattingSettings.ToggleSwitch({ name: "titleUnderline", displayName: "Underline", value: false });
+
+    titleFont = new formattingSettings.FontControl({
+        name: "titleFont", displayName: "Font",
+        fontFamily: this.titleFontFamily, fontSize: this.titleFontSize,
+        bold: this.titleBold, italic: this.titleItalic, underline: this.titleUnderline,
+    });
+
+    titleAlign = alignSlice("titleAlign", "left");
+
+    titleColor = new formattingSettings.ColorPicker({
+        name: "titleColor", displayName: "Font Color",
+        value: { value: "#1a1a2e" }, instanceKind: ConstantOrRule,
+    });
+
+    name: string = "titleSettings";
+    displayName: string = "Visual Title";
+    slices: Array<FormattingSettingsSlice> = [
+        this.showTitle, this.titleText, this.titleFont, this.titleAlign, this.titleColor
+    ];
+}
+
 class GaugeSettingsCard extends FormattingSettingsCard {
     gaugeType = new formattingSettings.ItemDropdown({
         name: "gaugeType",
@@ -106,6 +148,53 @@ class ZonesCard extends FormattingSettingsCard {
         instanceKind: ConstantOrRule
     });
 
+    useGradient = new formattingSettings.ToggleSwitch({
+        name: "useGradient",
+        displayName: "Gradient Zone Fills",
+        description: "Render zones with a subtle gradient (off = flat colour)",
+        value: true
+    });
+
+    showZoneLabels = new formattingSettings.ToggleSwitch({
+        name: "showZoneLabels",
+        displayName: "Show Zone Callouts",
+        description: "Display the three zone names around the arc",
+        value: false
+    });
+
+    zoneLabelPosition = new formattingSettings.ItemDropdown({
+        name: "zoneLabelPosition",
+        displayName: "Callout Position",
+        items: [
+            { displayName: "On the arc band", value: "band" },
+            { displayName: "Outside the outer edge", value: "outerEdge" },
+            { displayName: "Inside the inner edge", value: "innerEdge" }
+        ],
+        value: { displayName: "On the arc band", value: "band" }
+    });
+
+    zone1Label = new formattingSettings.TextInput({
+        name: "zone1Label", displayName: "Zone 1 Callout",
+        placeholder: "Critical", value: "Critical"
+    });
+
+    zone2Label = new formattingSettings.TextInput({
+        name: "zone2Label", displayName: "Zone 2 Callout",
+        placeholder: "Warning", value: "Warning"
+    });
+
+    zone3Label = new formattingSettings.TextInput({
+        name: "zone3Label", displayName: "Zone 3 Callout",
+        placeholder: "Healthy", value: "Healthy"
+    });
+
+    zoneLabelFontSize = new formattingSettings.NumUpDown({
+        name: "zoneLabelFontSize",
+        displayName: "Callout Font Size",
+        description: "Font size for zone callout labels (0 = auto)",
+        value: 0
+    });
+
     name: string = "zones";
     displayName: string = "Zones";
     slices: Array<FormattingSettingsSlice> = [
@@ -113,7 +202,56 @@ class ZonesCard extends FormattingSettingsCard {
         this.zone1Color,
         this.zone2End,
         this.zone2Color,
-        this.zone3Color
+        this.zone3Color,
+        this.useGradient,
+        this.showZoneLabels,
+        this.zoneLabelPosition,
+        this.zone1Label,
+        this.zone2Label,
+        this.zone3Label,
+        this.zoneLabelFontSize
+    ];
+}
+
+class ComparisonSettingsCard extends FormattingSettingsCard {
+    showComparison = new formattingSettings.ToggleSwitch({
+        name: "showComparison",
+        displayName: "Show Comparison Marker",
+        description: "Display the Comparison measure as a secondary marker on the arc",
+        value: true
+    });
+
+    comparisonStyle = new formattingSettings.ItemDropdown({
+        name: "comparisonStyle",
+        displayName: "Comparison Style",
+        items: [
+            { displayName: "Line", value: "line" },
+            { displayName: "Marker", value: "marker" }
+        ],
+        value: { displayName: "Marker", value: "marker" }
+    });
+
+    comparisonColor = new formattingSettings.ColorPicker({
+        name: "comparisonColor",
+        displayName: "Comparison Color",
+        value: { value: "#5e5d5a" },
+        instanceKind: ConstantOrRule
+    });
+
+    comparisonLabel = new formattingSettings.TextInput({
+        name: "comparisonLabel",
+        displayName: "Comparison Label",
+        placeholder: "Previous",
+        value: "Previous"
+    });
+
+    name: string = "comparisonSettings";
+    displayName: string = "Comparison";
+    slices: Array<FormattingSettingsSlice> = [
+        this.showComparison,
+        this.comparisonStyle,
+        this.comparisonColor,
+        this.comparisonLabel
     ];
 }
 
@@ -248,10 +386,12 @@ class ValueDisplayCard extends FormattingSettingsCard {
 }
 
 export class VisualFormattingSettingsModel extends FormattingSettingsModel {
+    titleSettingsCard = new TitleSettingsCard();
     gaugeSettingsCard = new GaugeSettingsCard();
     zonesCard = new ZonesCard();
     targetSettingsCard = new TargetSettingsCard();
+    comparisonSettingsCard = new ComparisonSettingsCard();
     valueDisplayCard = new ValueDisplayCard();
 
-    cards = [this.gaugeSettingsCard, this.zonesCard, this.targetSettingsCard, this.valueDisplayCard];
+    cards = [this.titleSettingsCard, this.gaugeSettingsCard, this.zonesCard, this.targetSettingsCard, this.comparisonSettingsCard, this.valueDisplayCard];
 }
