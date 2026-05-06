@@ -390,7 +390,7 @@ export class Visual implements IVisual {
 
             // Value arc — translucent overlay so zone colours stay primary.
             // Zones show through tinted by the value colour where the value reaches.
-            const VALUE_ARC_OPACITY = 0.45;
+            const VALUE_ARC_OPACITY = 0.25;
             if (showArc) {
                 if (animDuration > 0) {
                     const prevAngle = this.previousValueAngle ?? startAngle;
