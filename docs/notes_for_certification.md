@@ -1,15 +1,19 @@
-```
-Source code URL: https://github.com/Nexus-Codex-pbi/pbi-zone-gauge
-Product ID: placeholder
+Source code: https://github.com/Nexus-Codex-pbi/codex-zone-gauge
 Branch: main
-Build cmd: pbiviz package
+Build: npm install && pbiviz package
 API version: 5.11.0
 License: MIT
-VERIFICATION INSTRUCTIONS per cert policy:
-1180.2.2.2 Tooltips: Hover over the visual to verify that a tooltip appears displaying the value, target, comparison, minimum, maximum, and zone information. Verify that the tooltip hides on mouse leave.
-1180.2.2.3 Filter Out: When a Category field is bound, click the visual to verify that it filters other visuals on the report page by that category. Verify that Ctrl/Cmd-click enables multi-select filtering. When no Category is bound, verify that clicking the visual does not filter other visuals (no-op).
-1180.2.5 Right-click: Right-click the visual to verify that the standard Power BI context menu appears (e.g., Sort, Export data, etc.).
-CONTACT:
-Name: Nexus Codex Support
-Email: support@nexuscodex.nexus
-```
+
+VERIFICATION INSTRUCTIONS
+
+1. Open the bundled sample PBIX for this visual.
+2. Visual is pre-bound to representative measures.
+3. All format pane sections in the offer description have working controls.
+4. Right-click anywhere on the visual — context menu appears.
+5. Click on a data element — cross-filters other visuals (if applicable).
+6. Hover — tooltip appears with field/value.
+7. Resize — content remains visible via scroll or responsive SVG.
+
+CONTACT
+publisher: Nexus Codex
+contact: support@nexuscodex.nexus
