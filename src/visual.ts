@@ -388,13 +388,15 @@ export class Visual implements IVisual {
             const showArc = valueStyle === "arc" || valueStyle === "both";
             const showNeedle = valueStyle === "needle" || valueStyle === "both";
 
-            // Value arc
+            // Value arc — translucent overlay so zone colours stay primary.
+            // Zones show through tinted by the value colour where the value reaches.
+            const VALUE_ARC_OPACITY = 0.45;
             if (showArc) {
                 if (animDuration > 0) {
                     const prevAngle = this.previousValueAngle ?? startAngle;
                     (this.valuePath as any)
                         .attr("fill", valueColor)
-                        .attr("opacity", 1)
+                        .attr("opacity", VALUE_ARC_OPACITY)
                         .style("display", null)
                         .transition()
                         .duration(animDuration)
@@ -418,7 +420,7 @@ export class Visual implements IVisual {
                             endAngle: valueEndAngle
                         }))
                         .attr("fill", valueColor)
-                        .attr("opacity", 1)
+                        .attr("opacity", VALUE_ARC_OPACITY)
                         .style("display", null);
                 }
             } else {
