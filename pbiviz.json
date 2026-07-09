@@ -4,7 +4,7 @@
     "displayName": "Codex Zone Gauge",
     "guid": "codexZoneGaugeF1E2D3C4B5A6F7E8D9C0B1A2F3E4D5C6",
     "visualClassName": "Visual",
-    "version": "1.1.0.8",
+    "version": "1.1.0.9",
     "description": "Semi-circular gauge with configurable red/amber/green zones.",
     "supportUrl": "https://nexuscodex.nexus/support",
     "gitHubUrl": "https://github.com/Nexus-Codex-pbi/codex-zone-gauge"
