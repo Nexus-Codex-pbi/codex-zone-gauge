@@ -468,6 +468,27 @@
         }
       },
       "displayName": "Value Display"
+    },
+    "background": {
+      "displayName": "Background",
+      "properties": {
+        "backgroundColor": {
+          "displayName": "Background Colour",
+          "type": {
+            "fill": {
+              "solid": {
+                "color": true
+              }
+            }
+          }
+        },
+        "transparency": {
+          "displayName": "Transparency",
+          "type": {
+            "numeric": true
+          }
+        }
+      }
     }
   },
   "dataViewMappings": [

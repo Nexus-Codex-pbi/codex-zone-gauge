@@ -35,3 +35,16 @@
 - [ ] Demonstrates all features (gauge types, zones, target, comparison, value display)
 - [ ] Demonstrates formatting options (all format pane sections)
 - [ ] Demonstrates interactions (click-to-filter, context menu, tooltips)
+
+## 7. Background Transparency (TRANS-01/02/03/05)
+- [ ] Background card (Colour + Transparency) appears in the format pane
+- [ ] Old saved report (background properties never set) renders pixel-identical to pre-upgrade — no background painted (transparency defaults to 100 on this visual specifically since the SVG was never painted before this plan, D-06)
+- [ ] Setting Transparency to 0% with a colour chosen shows a fully opaque painted background over a non-white report canvas
+- [ ] Transparency 50% shows true partial transparency (canvas colour blends through)
+- [ ] Light theme and dark theme both render correctly with transparency applied
+- [ ] Zone arcs, needle, hub, target/comparison markers, callouts, and typography are visually unchanged from before this plan (scope guard — look overhaul is Phase 2)
+
+## 8. Conditional Formatting / fx (TRANS-04)
+- [ ] fx button appears next to Zone 3 Color (Success) swatch in the format pane
+- [ ] Binding a rule to Zone 3 Color changes the success-zone colour per data point
+- [ ] Data points without a rule fall back to the static Zone 3 Color swatch value

@@ -25,6 +25,10 @@ import DataView = powerbi.DataView;
 import { VisualFormattingSettingsModel, textAlignFor } from "./settings";
 import { clamp, CODEX_TOKENS } from "./utils";
 
+import { dataViewWildcard } from "powerbi-visuals-utils-dataviewutils";
+import { ColorHelper } from "powerbi-visuals-utils-colorutils";
+import { toRgba } from "../../_shared/formatting/colorHelpers";
+
 /**
  * Angle ranges for each gauge type (radians).
  *
@@ -75,9 +79,13 @@ export class Visual implements IVisual {
     private hcBackground: string = "";
 
     private svg: Selection<SVGSVGElement, unknown, null, undefined>;
+    private backgroundRect: Selection<SVGRectElement, unknown, null, undefined>;
     private defs: Selection<SVGDefsElement, unknown, null, undefined>;
     private titleEl: Selection<SVGTextElement, unknown, null, undefined>;
     private gaugeGroup: Selection<SVGGElement, unknown, null, undefined>;
+
+    // Conditional formatting (fx) state — Zone 3 (Success) Colour (TRANS-04)
+    private zone3ColorHelper: ColorHelper | null = null;
 
     // Persistent SVG selections — created once, updated on each render
     private borderPath: Selection<SVGPathElement, unknown, null, undefined>;
@@ -148,6 +156,13 @@ export class Visual implements IVisual {
             }
         });
 
+        // ─── Dedicated background layer (D-05) ─────────────────────────
+        // First child of the SVG (behind everything, including defs which
+        // paints nothing itself). Scope guard (Task 3): background-only —
+        // zone arcs, needle, hub, target/comparison markers, callouts, and
+        // typography below are untouched (Phase 2 owns the look overhaul).
+        this.backgroundRect = this.svg.append("rect").classed("zone-gauge-background", true);
+
         this.defs = this.svg.append("defs");
 
         // Iframe-internal title (Policy 1180.2.5 — title region must catch right-clicks
@@ -212,6 +227,24 @@ export class Visual implements IVisual {
 
             this.svg.attr("width", width).attr("height", height);
 
+            // ─── Dedicated background layer (D-05) ─────────────────────
+            // First child of the SVG, behind the gauge group. Never
+            // whole-root opacity. Transparency default is overridden to
+            // 100 in settings.ts (this visual's SVG was never painted
+            // before this plan — fully transparent), so an OLD saved
+            // report renders alpha 0, pixel-identical, per D-06.
+            if (!this.isHighContrast) {
+                const background = this.formattingSettings.background;
+                const bgHex = background.backgroundColor.value?.value ?? "#ffffff";
+                const bgTransparencyPct = background.transparency.value ?? 100;
+                this.backgroundRect
+                    .attr("width", width)
+                    .attr("height", height)
+                    .attr("fill", toRgba(bgHex, bgTransparencyPct));
+            } else {
+                this.backgroundRect.attr("fill", "none");
+            }
+
             // ── Parse data ──────────────────────────────────────────────
             const parsed = this.parseData(dataView);
 
@@ -227,6 +260,29 @@ export class Visual implements IVisual {
             // Capture selection ID for click-to-filter (1180.2.2.3)
             this.currentSelectionId = parsed.selectionId;
             this.svg.style("cursor", parsed.selectionId ? "pointer" : "default");
+
+            // ─── Conditional formatting (fx) wiring — Zone 3 (Success)
+            // Colour (TRANS-04). A bare `instanceKind: ConstantOrRule`
+            // declaration in settings.ts does not make the fx button
+            // functional on its own (Pitfall 5) — it also needs a
+            // `selector` (dataViewWildcard) and an `altConstantSelector`
+            // bound to a concrete selectionId. Resolved via
+            // ColorHelper.getColorForMeasure at the existing z3Color read
+            // site below (single-value visual, matching the pbiKpiCard
+            // reference pattern) — no other zone/needle/hub/callout code
+            // touched (Task 3 scope guard).
+            const zone3ColorSlice = this.formattingSettings.zonesCard.zone3Color;
+            zone3ColorSlice.selector = dataViewWildcard.createDataViewWildcardSelector(
+                dataViewWildcard.DataViewWildcardMatchingOption.InstancesAndTotals
+            );
+            zone3ColorSlice.altConstantSelector = this.currentSelectionId
+                ? this.currentSelectionId.getSelector()
+                : undefined;
+            this.zone3ColorHelper = new ColorHelper(
+                this.host.colorPalette,
+                { objectName: "zones", propertyName: "zone3Color" },
+                zone3ColorSlice.value.value
+            );
 
             // ── Settings shortcuts ──────────────────────────────────────
             const titleCfg  = this.formattingSettings.titleSettingsCard;
@@ -340,7 +396,10 @@ export class Visual implements IVisual {
             // ── High contrast overrides for zone colors ──────────────────
             const z1Color = this.isHighContrast ? this.hcForeground : zonesCfg.zone1Color.value.value;
             const z2Color = this.isHighContrast ? this.hcForeground : zonesCfg.zone2Color.value.value;
-            const z3Color = this.isHighContrast ? this.hcForeground : zonesCfg.zone3Color.value.value;
+            const z3Color = this.isHighContrast
+                ? this.hcForeground
+                : (this.zone3ColorHelper?.getColorForMeasure(dataView.metadata?.objects, "value")
+                    ?? zonesCfg.zone3Color.value.value);
 
             // ── Gradient defs (rebuilt each render to honour colour changes) ──
             this.defs.selectAll("*").remove();
