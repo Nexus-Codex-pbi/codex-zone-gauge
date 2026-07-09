@@ -9,50 +9,17 @@ import FormattingSettingsSlice = formattingSettings.Slice;
 import FormattingSettingsModel = formattingSettings.Model;
 
 import { BackgroundSettings } from "../../_shared/formatting/backgroundSettings";
+import { TitleSettings } from "../../_shared/formatting/titleSettings";
+import { alignSelfFor, textAlignFor, makeFontControl } from "../../_shared/formatting/textFormatting";
 
 const ConstantOrRule = powerbi.VisualEnumerationInstanceKinds.ConstantOrRule;
 
-function alignSlice(name: string, defaultValue: string = "left") {
-    return new formattingSettings.AlignmentGroup({
-        name, displayName: "Alignment",
-        mode: powerbi.visuals.AlignmentGroupMode.Horizonal,
-        value: defaultValue,
-    });
-}
-
-export function textAlignFor(v: string | undefined): string {
-    return v === "center" || v === "right" ? v : "left";
-}
-
-class TitleSettingsCard extends FormattingSettingsCard {
-    showTitle = new formattingSettings.ToggleSwitch({ name: "showTitle", displayName: "Show Title", value: false });
-    titleText = new formattingSettings.TextInput({ name: "titleText", displayName: "Title Text", placeholder: "Visual title", value: "" });
-
-    titleFontFamily = new formattingSettings.FontPicker({ name: "titleFontFamily", displayName: "Font Family", value: "Segoe UI, sans-serif" });
-    titleFontSize = new formattingSettings.NumUpDown({ name: "titleFontSize", displayName: "Font Size", value: 14 });
-    titleBold = new formattingSettings.ToggleSwitch({ name: "titleBold", displayName: "Bold", value: true });
-    titleItalic = new formattingSettings.ToggleSwitch({ name: "titleItalic", displayName: "Italic", value: false });
-    titleUnderline = new formattingSettings.ToggleSwitch({ name: "titleUnderline", displayName: "Underline", value: false });
-
-    titleFont = new formattingSettings.FontControl({
-        name: "titleFont", displayName: "Font",
-        fontFamily: this.titleFontFamily, fontSize: this.titleFontSize,
-        bold: this.titleBold, italic: this.titleItalic, underline: this.titleUnderline,
-    });
-
-    titleAlign = alignSlice("titleAlign", "left");
-
-    titleColor = new formattingSettings.ColorPicker({
-        name: "titleColor", displayName: "Font Color",
-        value: { value: "#1a1a2e" }, instanceKind: ConstantOrRule,
-    });
-
-    name: string = "titleSettings";
-    displayName: string = "Visual Title";
-    slices: Array<FormattingSettingsSlice> = [
-        this.showTitle, this.titleText, this.titleFont, this.titleAlign, this.titleColor
-    ];
-}
+// TitleSettings + alignment helpers now live in _shared/formatting/ (D-13,
+// D-14 — migrated onto the frozen v2 standard from Plan 10; the inline
+// TitleSettingsCard/alignSlice duplicates that used to live here are
+// deleted). Re-exported so visual.ts can import them from "./settings"
+// (stable import path, zero churn on the consuming side).
+export { TitleSettings, alignSelfFor, textAlignFor };
 
 class GaugeSettingsCard extends FormattingSettingsCard {
     gaugeType = new formattingSettings.ItemDropdown({
@@ -342,12 +309,17 @@ class ValueDisplayCard extends FormattingSettingsCard {
         instanceKind: ConstantOrRule
     });
 
-    valueFontSize = new formattingSettings.NumUpDown({
-        name: "valueFontSize",
-        displayName: "Value Font Size",
-        description: "Font size for value text (0 = auto-scale)",
-        value: 0
-    });
+    // Value readout text — FontControl composite reuses the existing
+    // "valueFontSize" property name (D-06/D-07: additive-only, no schema
+    // rename). Bold defaults true to match the previously-hardcoded
+    // font-weight:700 (render-nothing-default parity).
+    private valueFontBundle = makeFontControl("value", { fontSize: 0, bold: true });
+    valueFontFamily = this.valueFontBundle.fontFamily;
+    valueFontSize = this.valueFontBundle.fontSize;
+    valueBold = this.valueFontBundle.bold;
+    valueItalic = this.valueFontBundle.italic;
+    valueUnderline = this.valueFontBundle.underline;
+    valueFont = this.valueFontBundle.control;
 
     showLabel = new formattingSettings.ToggleSwitch({
         name: "showLabel",
@@ -364,12 +336,18 @@ class ValueDisplayCard extends FormattingSettingsCard {
         instanceKind: ConstantOrRule
     });
 
-    labelFontSize = new formattingSettings.NumUpDown({
-        name: "labelFontSize",
-        displayName: "Label Font Size",
-        description: "Font size for zone label text (0 = auto-scale)",
-        value: 0
-    });
+    // Zone label text (below value) — FontControl composite reuses the
+    // existing "labelFontSize" property name. Bold defaults false — the
+    // closest boolean match to the previously-hardcoded font-weight:500
+    // (render-nothing-default parity; same design call made on the other
+    // batch visuals' "detail"-weight text).
+    private labelFontBundle = makeFontControl("label", { fontSize: 0, bold: false });
+    labelFontFamily = this.labelFontBundle.fontFamily;
+    labelFontSize = this.labelFontBundle.fontSize;
+    labelBold = this.labelFontBundle.bold;
+    labelItalic = this.labelFontBundle.italic;
+    labelUnderline = this.labelFontBundle.underline;
+    labelFont = this.labelFontBundle.control;
 
     name: string = "valueDisplay";
     displayName: string = "Value Display";
@@ -380,15 +358,15 @@ class ValueDisplayCard extends FormattingSettingsCard {
         this.valueFormat,
         this.decimalPlaces,
         this.valueColor,
-        this.valueFontSize,
+        this.valueFont,
         this.showLabel,
         this.labelColor,
-        this.labelFontSize
+        this.labelFont
     ];
 }
 
 export class VisualFormattingSettingsModel extends FormattingSettingsModel {
-    titleSettingsCard = new TitleSettingsCard();
+    titleSettingsCard = new TitleSettings();
     gaugeSettingsCard = new GaugeSettingsCard();
     zonesCard = new ZonesCard();
     targetSettingsCard = new TargetSettingsCard();

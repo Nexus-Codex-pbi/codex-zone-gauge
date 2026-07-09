@@ -48,3 +48,24 @@
 - [ ] fx button appears next to Zone 3 Color (Success) swatch in the format pane
 - [ ] Binding a rule to Zone 3 Color changes the success-zone colour per data point
 - [ ] Data points without a rule fall back to the static Zone 3 Color swatch value
+
+## 9. Visual Title (TITLE-01, D-13/D-14, migrated to shared `_shared/formatting/titleSettings`)
+- [ ] Show Title toggle appears in the format pane under "Visual Title"; default OFF
+- [ ] Enabling Show Title + entering Title Text renders a title inside the visual's own iframe (an SVG text element above the gauge, unchanged rendering from before this migration)
+- [ ] Title Font (family/size/bold/italic/underline), Alignment, and Font Color all apply correctly
+- [ ] Old saved report (no title properties set) renders with no title — pixel-identical to pre-upgrade (showTitle defaults false)
+
+## 10. Per-Surface Text Treatment (TEXT-01) — value readout + zone label ONLY
+- [ ] Value readout Font — family/bold/italic/underline apply to the central value text
+- [ ] Zone Label Font — family/bold/italic/underline apply to the zone label text below the value (e.g. Poor/Acceptable/Good)
+- [ ] Old saved report (no new font properties set): value renders bold (700, unchanged), zone label renders normal weight (400, closest match to the prior hardcoded 500 weight)
+- [ ] Zone callouts (arc labels), gauge arcs, needle, hub, target/comparison markers remain completely untouched — no font/text controls added to these (scope guard: look overhaul deferred to Phase 2)
+
+## 11. Text-Colour fx (TEXT-02)
+- [ ] fx button appears next to Value Color swatch (Value Display card) in the format pane
+- [ ] Binding a measure to a conditional formatting rule on Value Color changes the value readout colour
+- [ ] With no rule bound and Value Color left empty, the value readout still falls back to matching the current zone colour (pre-existing "leave empty to match zone colour" idiom, unchanged)
+
+## 12. Scope Guard Verification (T-11-04)
+- [ ] `git diff` on this plan's Zone Gauge changes touches ONLY: settings.ts title/value/label properties, capabilities.json title/value/label properties, visual.ts title-adjacent code + value/label render sites + 2 fx wiring blocks
+- [ ] No changes to zone gradient fills, needle rendering, hub, arc geometry, target/comparison marker code, or zone callout (arc label) code

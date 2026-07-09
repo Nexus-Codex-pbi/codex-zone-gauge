@@ -444,6 +444,32 @@
           },
           "displayName": "Value Font Size"
         },
+        "valueFontFamily": {
+          "type": {
+            "formatting": {
+              "fontFamily": true
+            }
+          },
+          "displayName": "Value Font Family"
+        },
+        "valueBold": {
+          "type": {
+            "bool": true
+          },
+          "displayName": "Value Bold"
+        },
+        "valueItalic": {
+          "type": {
+            "bool": true
+          },
+          "displayName": "Value Italic"
+        },
+        "valueUnderline": {
+          "type": {
+            "bool": true
+          },
+          "displayName": "Value Underline"
+        },
         "showLabel": {
           "type": {
             "bool": true
@@ -465,6 +491,32 @@
             "numeric": true
           },
           "displayName": "Label Font Size"
+        },
+        "labelFontFamily": {
+          "type": {
+            "formatting": {
+              "fontFamily": true
+            }
+          },
+          "displayName": "Label Font Family"
+        },
+        "labelBold": {
+          "type": {
+            "bool": true
+          },
+          "displayName": "Label Bold"
+        },
+        "labelItalic": {
+          "type": {
+            "bool": true
+          },
+          "displayName": "Label Italic"
+        },
+        "labelUnderline": {
+          "type": {
+            "bool": true
+          },
+          "displayName": "Label Underline"
         }
       },
       "displayName": "Value Display"

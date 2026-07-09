@@ -87,6 +87,9 @@ export class Visual implements IVisual {
     // Conditional formatting (fx) state — Zone 3 (Success) Colour (TRANS-04)
     private zone3ColorHelper: ColorHelper | null = null;
 
+    // Conditional formatting (fx) state — Value readout Colour (TEXT-02)
+    private valueColorHelper: ColorHelper | null = null;
+
     // Persistent SVG selections — created once, updated on each render
     private borderPath: Selection<SVGPathElement, unknown, null, undefined>;
     private zone1Path: Selection<SVGPathElement, unknown, null, undefined>;
@@ -282,6 +285,25 @@ export class Visual implements IVisual {
                 this.host.colorPalette,
                 { objectName: "zones", propertyName: "zone3Color" },
                 zone3ColorSlice.value.value
+            );
+
+            // ─── Conditional formatting (fx) wiring — Value readout
+            // Colour (TEXT-02). Same wildcard-selector + altConstantSelector
+            // + ColorHelper.getColorForMeasure pattern as Zone 3 Colour
+            // above, targeting the "value" measure role. Resolved at the
+            // existing effectiveValueColor read site below — no other
+            // zone/needle/hub/callout code touched (Task 3 scope guard).
+            const valueColorSlice = this.formattingSettings.valueDisplayCard.valueColor;
+            valueColorSlice.selector = dataViewWildcard.createDataViewWildcardSelector(
+                dataViewWildcard.DataViewWildcardMatchingOption.InstancesAndTotals
+            );
+            valueColorSlice.altConstantSelector = this.currentSelectionId
+                ? this.currentSelectionId.getSelector()
+                : undefined;
+            this.valueColorHelper = new ColorHelper(
+                this.host.colorPalette,
+                { objectName: "valueDisplay", propertyName: "valueColor" },
+                valueColorSlice.value.value
             );
 
             // ── Settings shortcuts ──────────────────────────────────────
@@ -700,10 +722,25 @@ export class Visual implements IVisual {
                 : autoValueFontSize;
             const textYBase = isSemicircle ? 8 : radius * 0.15 + 8;
 
-            // Use custom color if set, otherwise fall back to zone color
-            const customValueColor = valueCfg.valueColor.value.value;
+            // ColorHelper.getColorForMeasure (TEXT-02 fx) already resolves
+            // "a bound rule's colour, else the static Value Color swatch"
+            // (the swatch was passed in as its default-colour constructor
+            // arg above). What it can't know is this visual's own "leave
+            // empty to match zone colour" idiom — so an empty result still
+            // falls through to the data-driven zone colour, exactly as
+            // before this plan (D-06).
+            const resolvedValueColor = this.valueColorHelper?.getColorForMeasure(dataView?.metadata?.objects, "value") ?? "";
             const effectiveValueColor = this.isHighContrast ? this.hcForeground
-                : (customValueColor && customValueColor.length > 0 ? customValueColor : valueColor);
+                : (resolvedValueColor && resolvedValueColor.length > 0 ? resolvedValueColor : valueColor);
+
+            // Text treatment (TEXT-01) — `?? default` reproduces the
+            // pre-existing hardcoded font-weight:700 exactly when an old
+            // saved report has none of these new properties set (D-06):
+            // valueBold defaults true.
+            const valueFontFamily = valueCfg.valueFontFamily.value || "Segoe UI, sans-serif";
+            const valueWeight = valueCfg.valueBold.value ? "700" : "400";
+            const valueTextStyle = valueCfg.valueItalic.value ? "italic" : "normal";
+            const valueDecoration = valueCfg.valueUnderline.value ? "underline" : "none";
 
             if (valueCfg.showValue.value) {
                 const format = valueCfg.valueFormat.value.value as string;
@@ -718,7 +755,10 @@ export class Visual implements IVisual {
                     .attr("text-anchor", "middle")
                     .attr("dominant-baseline", "hanging")
                     .style("font-size", valueFontSize + "px")
-                    .style("font-weight", "700")
+                    .style("font-family", valueFontFamily)
+                    .style("font-weight", valueWeight)
+                    .style("font-style", valueTextStyle)
+                    .style("text-decoration", valueDecoration)
                     .style("fill", effectiveValueColor)
                     .style("display", null);
 
@@ -763,13 +803,25 @@ export class Visual implements IVisual {
                 const effectiveLabelColor = this.isHighContrast ? this.hcForeground
                     : (customLabelColor && customLabelColor.length > 0 ? customLabelColor : valueColor);
 
+                // Text treatment (TEXT-01) — `?? default` reproduces the
+                // pre-existing hardcoded font-weight:500 as closely as a
+                // boolean toggle allows (labelBold defaults false -> 400,
+                // the closest match; D-06).
+                const labelFontFamily = valueCfg.labelFontFamily.value || "Segoe UI, sans-serif";
+                const labelWeight = valueCfg.labelBold.value ? "700" : "400";
+                const labelStyle = valueCfg.labelItalic.value ? "italic" : "normal";
+                const labelDecoration = valueCfg.labelUnderline.value ? "underline" : "none";
+
                 this.labelText
                     .attr("x", 0)
                     .attr("y", labelY)
                     .attr("text-anchor", "middle")
                     .attr("dominant-baseline", "hanging")
                     .style("font-size", labelFontSize + "px")
-                    .style("font-weight", "500")
+                    .style("font-family", labelFontFamily)
+                    .style("font-weight", labelWeight)
+                    .style("font-style", labelStyle)
+                    .style("text-decoration", labelDecoration)
                     .style("fill", effectiveLabelColor)
                     .text(zoneLabel)
                     .style("display", null);
