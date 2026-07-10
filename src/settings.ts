@@ -11,6 +11,7 @@ import FormattingSettingsModel = formattingSettings.Model;
 import { BackgroundSettings } from "../../_shared/formatting/backgroundSettings";
 import { TitleSettings } from "../../_shared/formatting/titleSettings";
 import { alignSelfFor, textAlignFor, makeFontControl } from "../../_shared/formatting/textFormatting";
+import { targetToken } from "../../_shared/formatting/bandEngine";
 
 const ConstantOrRule = powerbi.VisualEnumerationInstanceKinds.ConstantOrRule;
 
@@ -242,10 +243,17 @@ class TargetSettingsCard extends FormattingSettingsCard {
         value: { displayName: "Line", value: "line" }
     });
 
+    // v2 board look (01-18 Task 4, audit-board polish) — the declared
+    // default flips from the old navy #130064 to the shared v3 violet
+    // target token (targetToken(), bandEngine's dedicated "goal marker"
+    // colour, never a band/status colour). An old saved report with an
+    // explicit Target Color already resolves that saved value straight
+    // through Power BI's own settings framework (D-06/D-16) — only the
+    // never-before-touched default changes.
     targetColor = new formattingSettings.ColorPicker({
         name: "targetColor",
         displayName: "Target Color",
-        value: { value: "#130064" },
+        value: { value: targetToken("light") },
         instanceKind: ConstantOrRule
     });
 

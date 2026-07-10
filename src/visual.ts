@@ -28,6 +28,20 @@ import { clamp, CODEX_TOKENS } from "./utils";
 import { dataViewWildcard } from "powerbi-visuals-utils-dataviewutils";
 import { ColorHelper } from "powerbi-visuals-utils-colorutils";
 import { toRgba } from "../../_shared/formatting/colorHelpers";
+import { Theme } from "../../_shared/formatting/bandEngine";
+
+/** Luminance-based theme pick (matches the pbiKpiCard v3 pilot's own
+ * 0.55 threshold convention) — this visual's Background Colour default
+ * is opaque white even though the overlay itself defaults transparent
+ * (transparency 100), so the configured HEX is still a reliable
+ * authorial-intent signal for the needle's theme-aware fallback below. */
+function themeFor(hex: string): Theme {
+    const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})/i.exec(hex || "");
+    if (!m) return "light";
+    const r = parseInt(m[1], 16), g = parseInt(m[2], 16), b = parseInt(m[3], 16);
+    const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+    return luminance < 0.5 ? "dark" : "light";
+}
 
 /**
  * Angle ranges for each gauge type (radians).
@@ -224,6 +238,12 @@ export class Visual implements IVisual {
             this.formattingSettings = this.formattingSettingsService.populateFormattingSettingsModel(
                 VisualFormattingSettingsModel, dataView
             );
+
+            // v3 theme pick (01-18 Task 4, audit-board polish) — drives the
+            // needle's theme-aware default fallback below. Scope guard: this
+            // is the ONLY new engine-level primitive Task 4 introduces; no
+            // dome/face/hub/six-style rebuild (Phase 3, GAUGE-02/03).
+            const theme: Theme = themeFor(this.formattingSettings.background.backgroundColor.value?.value ?? "#ffffff");
 
             const width = options.viewport.width;
             const height = options.viewport.height;
@@ -436,19 +456,33 @@ export class Visual implements IVisual {
             const z1Fill = useGradient ? "url(#zone1-grad)" : z1Color;
             const z2Fill = useGradient ? "url(#zone2-grad)" : z2Color;
             const z3Fill = useGradient ? "url(#zone3-grad)" : z3Color;
-            const zoneOpacity = this.isHighContrast ? 0.5 : (useGradient ? 0.85 : 0.3);
+            const baseZoneOpacity = this.isHighContrast ? 0.5 : (useGradient ? 0.85 : 0.3);
+
+            // v2 board look (01-18 Task 4, audit-board polish) — "active
+            // zone lights, others dim": the zone the current value falls
+            // in renders at a lit-up opacity; the other two dim well below
+            // the pre-existing flat 0.3/0.85. High contrast keeps the
+            // pre-existing flat 0.5 for all three (opacity-only dimming
+            // under HC would still read as colour-adjacent state, so the
+            // HC path stays untouched — same convention as every other
+            // colour-only affordance in this suite).
+            const LIT_OPACITY = this.isHighContrast ? baseZoneOpacity : (useGradient ? 0.95 : 0.55);
+            const DIM_OPACITY = this.isHighContrast ? baseZoneOpacity : (useGradient ? 0.35 : 0.12);
+            const zone1Opacity = currentVal <= zone1End ? LIT_OPACITY : DIM_OPACITY;
+            const zone2Opacity = (currentVal > zone1End && currentVal <= zone2End) ? LIT_OPACITY : DIM_OPACITY;
+            const zone3Opacity = currentVal > zone2End ? LIT_OPACITY : DIM_OPACITY;
 
             this.drawArc(this.zone1Path, arcGen, innerRadius, outerRadius,
                 startAngle, angleScale(zone1End),
-                z1Fill, zoneOpacity);
+                z1Fill, zone1Opacity);
 
             this.drawArc(this.zone2Path, arcGen, innerRadius, outerRadius,
                 angleScale(zone1End), angleScale(zone2End),
-                z2Fill, zoneOpacity);
+                z2Fill, zone2Opacity);
 
             this.drawArc(this.zone3Path, arcGen, innerRadius, outerRadius,
                 angleScale(zone2End), endAngle,
-                z3Fill, zoneOpacity);
+                z3Fill, zone3Opacity);
 
             // ── Value colour (matches whichever zone the needle is in) ──
             let valueColor: string;
@@ -511,9 +545,17 @@ export class Visual implements IVisual {
 
             // Value needle (tachometer style from centre, with eased rotation)
             if (showNeedle) {
+                // v2 board look (01-18 Task 4, audit-board polish) — "black
+                // needle on light canvas / band-tinted [zone colour] on
+                // dark": extends the EXISTING empty-string "auto" sentinel
+                // (Needle Color's own pre-existing default/idiom — "leave
+                // default to match zone color") with a theme branch, rather
+                // than inventing a new property. An explicit Needle Color
+                // override still resolves untouched (D-16).
                 const customNeedleColor = valueCfg.needleColor.value.value;
+                const autoNeedleColor = theme === "light" ? "#000000" : valueColor;
                 const nColor = this.isHighContrast ? this.hcForeground
-                    : (customNeedleColor && customNeedleColor.length > 0 ? customNeedleColor : valueColor);
+                    : (customNeedleColor && customNeedleColor.length > 0 ? customNeedleColor : autoNeedleColor);
                 const needleLen = outerRadius + 4;
                 const needleWidth = Math.max(3, thickness * 0.15);
                 const hubRadius = Math.max(5, thickness * 0.3);
@@ -716,6 +758,12 @@ export class Visual implements IVisual {
             }
 
             // ── Value text ──────────────────────────────────────────────
+            // "Value always on top" (01-18 Task 4, audit-board polish) is
+            // already true by construction: this.valueText is appended in
+            // the constructor AFTER the needle/hub/target/comparison/zone-
+            // label elements (SVG paints later-appended siblings on top),
+            // so no DOM-reorder was needed here — verified via the
+            // constructor's append order, not re-derived per render.
             const autoValueFontSize = Math.max(12, Math.min(radius * 0.35, 48));
             const valueFontSize = valueCfg.valueFontSize.value > 0
                 ? valueCfg.valueFontSize.value

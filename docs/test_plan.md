@@ -69,3 +69,15 @@
 ## 12. Scope Guard Verification (T-11-04)
 - [ ] `git diff` on this plan's Zone Gauge changes touches ONLY: settings.ts title/value/label properties, capabilities.json title/value/label properties, visual.ts title-adjacent code + value/label render sites + 2 fx wiring blocks
 - [ ] No changes to zone gradient fills, needle rendering, hub, arc geometry, target/comparison marker code, or zone callout (arc label) code
+
+## 13. Audit-Board Polish (01-18 Task 4) — NON-conflicting only, full rebuild is Phase 3
+- [ ] Active zone (the one containing the current value) renders visibly brighter/lit than the other two zones, which dim well below the pre-existing flat opacity
+- [ ] Moving the bound value across zone boundaries re-lights the newly-active zone and dims the previously-active one on the next render
+- [ ] High contrast: all three zones keep the pre-existing flat opacity (0.5) — no active/dim distinction under HC (opacity-only status is avoided under the HC contract)
+- [ ] The value readout (central number) always paints visually on top of the needle, hub, target marker/line, and comparison marker/line, regardless of gauge type or overlap — confirmed via the constructor's DOM append order (value/label text appended last)
+- [ ] Target tick's declared default is now the shared v3 violet target token (`#6d28d9`) instead of the old navy `#130064` — an old saved report with an explicit Target Color keeps its saved value (D-06/D-16)
+- [ ] Needle defaults to solid black (`#000000`) on a light-theme background (Background Colour left at its white default) when Needle Color is left at its own "auto" empty-string default
+- [ ] Needle defaults to the band/zone-tinted colour (unchanged pre-existing behaviour) when the configured Background Colour reads as a dark theme
+- [ ] An explicit, non-empty Needle Color override still resolves untouched regardless of theme (D-16)
+- [ ] Confirmed via `git diff`: no dome/face, no 3D metallic hub, no six-style gallery, no gauge-style-selector property added — the full rebuild (GAUGE-02/03) stays deferred to Phase 3
+- [ ] `npx pbiviz package` exits 0
