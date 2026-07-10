@@ -8,10 +8,10 @@ import FormattingSettingsCard = formattingSettings.SimpleCard;
 import FormattingSettingsSlice = formattingSettings.Slice;
 import FormattingSettingsModel = formattingSettings.Model;
 
-import { BackgroundSettings } from "../../_shared/formatting/backgroundSettings";
-import { TitleSettings } from "../../_shared/formatting/titleSettings";
-import { alignSelfFor, textAlignFor, makeFontControl } from "../../_shared/formatting/textFormatting";
-import { targetToken } from "../../_shared/formatting/bandEngine";
+import { BackgroundSettings } from "./shared/backgroundSettings";
+import { TitleSettings } from "./shared/titleSettings";
+import { alignSelfFor, textAlignFor, makeFontControl } from "./shared/textFormatting";
+import { targetToken } from "./shared/bandEngine";
 
 const ConstantOrRule = powerbi.VisualEnumerationInstanceKinds.ConstantOrRule;
 

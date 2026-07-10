@@ -27,8 +27,8 @@ import { clamp, CODEX_TOKENS } from "./utils";
 
 import { dataViewWildcard } from "powerbi-visuals-utils-dataviewutils";
 import { ColorHelper } from "powerbi-visuals-utils-colorutils";
-import { toRgba } from "../../_shared/formatting/colorHelpers";
-import { Theme } from "../../_shared/formatting/bandEngine";
+import { toRgba } from "./shared/colorHelpers";
+import { Theme } from "./shared/bandEngine";
 
 /** Luminance-based theme pick (matches the pbiKpiCard v3 pilot's own
  * 0.55 threshold convention) — this visual's Background Colour default
