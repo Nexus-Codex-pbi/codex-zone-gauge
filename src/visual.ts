@@ -298,9 +298,7 @@ export class Visual implements IVisual {
             zone3ColorSlice.selector = dataViewWildcard.createDataViewWildcardSelector(
                 dataViewWildcard.DataViewWildcardMatchingOption.InstancesAndTotals
             );
-            zone3ColorSlice.altConstantSelector = this.currentSelectionId
-                ? this.currentSelectionId.getSelector()
-                : undefined;
+            zone3ColorSlice.altConstantSelector = undefined; // card-level constant persistence: swatch edits apply to ALL instances + round-trip into the pane (first-instance binding persisted a row-0-only override); fx rules stay per-instance via the wildcard selector;
             this.zone3ColorHelper = new ColorHelper(
                 this.host.colorPalette,
                 { objectName: "zones", propertyName: "zone3Color" },
@@ -317,9 +315,7 @@ export class Visual implements IVisual {
             valueColorSlice.selector = dataViewWildcard.createDataViewWildcardSelector(
                 dataViewWildcard.DataViewWildcardMatchingOption.InstancesAndTotals
             );
-            valueColorSlice.altConstantSelector = this.currentSelectionId
-                ? this.currentSelectionId.getSelector()
-                : undefined;
+            valueColorSlice.altConstantSelector = undefined; // card-level constant persistence: swatch edits apply to ALL instances + round-trip into the pane (first-instance binding persisted a row-0-only override); fx rules stay per-instance via the wildcard selector;
             this.valueColorHelper = new ColorHelper(
                 this.host.colorPalette,
                 { objectName: "valueDisplay", propertyName: "valueColor" },
