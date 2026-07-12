@@ -29,6 +29,7 @@ import { dataViewWildcard } from "powerbi-visuals-utils-dataviewutils";
 import { ColorHelper } from "powerbi-visuals-utils-colorutils";
 import { toRgba } from "./shared/colorHelpers";
 import { Theme } from "./shared/bandEngine";
+import { surfaceTokens } from "./shared/designTokens";
 
 /** Luminance-based theme pick (matches the pbiKpiCard v3 pilot's own
  * 0.55 threshold convention) — this visual's Background Colour default
@@ -339,6 +340,11 @@ export class Visual implements IVisual {
                 const ta = textAlignFor(tAlign);
                 const x = ta === "center" ? width / 2 : ta === "right" ? width - 8 : 8;
                 const anchor = ta === "center" ? "middle" : ta === "right" ? "end" : "start";
+                // Adaptive default (D-16 sentinel): untouched shared-Title navy
+                // swaps to the dark text token on dark surfaces.
+                const setTitle = titleCfg.titleColor.value.value;
+                const adaptiveTitle = setTitle === "#1a1a2e" && theme === "dark"
+                    ? surfaceTokens("dark").text : setTitle;
                 this.titleEl
                     .attr("x", x)
                     .attr("y", titleFontSize + 4)
@@ -348,7 +354,7 @@ export class Visual implements IVisual {
                     .style("font-weight", titleCfg.titleBold.value ? "700" : "400")
                     .style("font-style", titleCfg.titleItalic.value ? "italic" : "normal")
                     .style("text-decoration", titleCfg.titleUnderline.value ? "underline" : "none")
-                    .style("fill", this.isHighContrast ? this.hcForeground : titleCfg.titleColor.value.value)
+                    .style("fill", this.isHighContrast ? this.hcForeground : adaptiveTitle)
                     .text(titleCfg.titleText.value)
                     .style("display", null);
             } else {
