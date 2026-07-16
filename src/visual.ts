@@ -28,8 +28,11 @@ import { clamp, CODEX_TOKENS } from "./utils";
 import { dataViewWildcard } from "powerbi-visuals-utils-dataviewutils";
 import { ColorHelper } from "powerbi-visuals-utils-colorutils";
 import { toRgba } from "./shared/colorHelpers";
-import { Theme } from "./shared/bandEngine";
+import { Theme, accentToken } from "./shared/bandEngine";
 import { surfaceTokens } from "./shared/designTokens";
+import { makeCornerBrackets, CardSignatureHandle } from "./shared/cardSignature";
+import { applyCardSignature } from "./shared/cardSignatureSettings";
+import { applyBorder } from "./shared/borderSettings";
 
 /** Luminance-based theme pick (matches the pbiKpiCard v3 pilot's own
  * 0.55 threshold convention) — this visual's Background Colour default
@@ -97,6 +100,9 @@ export class Visual implements IVisual {
     private backgroundRect: Selection<SVGRectElement, unknown, null, undefined>;
     private defs: Selection<SVGDefsElement, unknown, null, undefined>;
     private titleEl: Selection<SVGTextElement, unknown, null, undefined>;
+    // Corner-bracket card signature (suite kit) — accent-tinted overlay on
+    // the full-tile root, painted above the gauge SVG. pointer-events:none.
+    private cornerSignature: CardSignatureHandle | null = null;
     private gaugeGroup: Selection<SVGGElement, unknown, null, undefined>;
 
     // Conditional formatting (fx) state — Zone 3 (Success) Colour (TRANS-04)
@@ -161,10 +167,25 @@ export class Visual implements IVisual {
             this.tooltipService.hide({ isTouchEvent: false, immediately: false });
         });
 
+        // Root carries the suite chrome (Border card, Corner Accents): keep
+        // the border inside the tile and anchor the absolutely-positioned
+        // corner overlay.
+        this.target.style.boxSizing = "border-box";
+        this.target.style.position = "relative";
+
         // Root SVG fills the Power BI tile
         this.svg = select(this.target)
             .append("svg")
             .classed("zone-gauge-svg", true);
+
+        // Corner-bracket card signature (suite kit) — appended after the SVG
+        // so it overlays the gauge; accent-tinted, refreshed per render via
+        // applyCardSignature. pointer-events:none.
+        this.cornerSignature = makeCornerBrackets(
+            this.target,
+            accentToken("dark"),
+            { variant: "cornerBracket", mirror: true }
+        );
 
         // Click-to-filter (1180.2.2.3 Filter Out)
         this.svg.on("click", (e: MouseEvent) => {
@@ -268,6 +289,27 @@ export class Visual implements IVisual {
             } else {
                 this.backgroundRect.attr("fill", "none");
             }
+
+            // ─── Suite chrome: Border card + Corner Accents on the full-tile
+            // root (this visual's sample-QA turn wiring — the shared modules
+            // were vendored "source only" in the shared-sync pass). Border is
+            // CSS on the root so it wraps everything the SVG paints (title is
+            // an in-SVG <text>, so the background rect already covers it);
+            // the corner overlay is refreshed to the theme accent per render.
+            applyBorder(this.target, this.formattingSettings.visualBorder, {
+                hcActive: this.isHighContrast,
+                hcColor: this.hcForeground,
+                palette: this.host.colorPalette,
+                metadataObjects: undefined,
+            });
+            applyCardSignature(this.cornerSignature, this.formattingSettings.cardSignature, {
+                autoHex: accentToken(theme),
+                hcActive: this.isHighContrast,
+                hcColor: this.hcForeground,
+                mirror: true,
+                glowMix: this.isHighContrast ? 0 : (theme === "dark" ? 55 : 0),
+                muted: false,
+            });
 
             // ── Parse data ──────────────────────────────────────────────
             const parsed = this.parseData(dataView);

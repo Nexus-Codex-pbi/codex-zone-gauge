@@ -10,6 +10,8 @@ import FormattingSettingsModel = formattingSettings.Model;
 
 import { BackgroundSettings } from "./shared/backgroundSettings";
 import { TitleSettings } from "./shared/titleSettings";
+import { BorderSettings } from "./shared/borderSettings";
+import { CardSignatureSettings } from "./shared/cardSignatureSettings";
 import { alignSelfFor, textAlignFor, makeFontControl } from "./shared/textFormatting";
 import { targetToken } from "./shared/bandEngine";
 
@@ -397,5 +399,8 @@ export class VisualFormattingSettingsModel extends FormattingSettingsModel {
         this.background.transparency.value = 100;
     }
 
-    cards = [this.titleSettingsCard, this.gaugeSettingsCard, this.zonesCard, this.targetSettingsCard, this.comparisonSettingsCard, this.valueDisplayCard, this.background];
+    visualBorder = new BorderSettings();
+    cardSignature = new CardSignatureSettings();
+
+    cards = [this.titleSettingsCard, this.gaugeSettingsCard, this.zonesCard, this.targetSettingsCard, this.comparisonSettingsCard, this.valueDisplayCard, this.background, this.cardSignature, this.visualBorder];
 }
