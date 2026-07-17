@@ -110,6 +110,8 @@ export class Visual implements IVisual {
     private cornerSignature: CardSignatureHandle | null = null;
     private gaugeGroup: Selection<SVGGElement, unknown, null, undefined>;
     private altGroup: Selection<SVGGElement, unknown, null, undefined>;
+    private zoneSegGroup: Selection<SVGGElement, unknown, null, undefined>;
+    private needleHubInner: Selection<SVGCircleElement, unknown, null, undefined>;
 
     // Conditional formatting (fx) state — Zone 3 (Success) Colour (TRANS-04)
     private zone3ColorHelper: ColorHelper | null = null;
@@ -228,6 +230,10 @@ export class Visual implements IVisual {
         this.zone1Path = this.gaugeGroup.append("path").classed("zone-arc zone-1", true);
         this.zone2Path = this.gaugeGroup.append("path").classed("zone-arc zone-2", true);
         this.zone3Path = this.gaugeGroup.append("path").classed("zone-arc zone-3", true);
+        // Segmented zone treatment (GAUGE-02 remix default): LED blocks
+        // rendered here instead of the three solid paths above; also hosts
+        // the scale endpoint labels. Same z-slot as the zone paths.
+        this.zoneSegGroup = this.gaugeGroup.append("g").classed("zone-segments", true);
 
         // Value overlay arc (full opacity, slightly inset)
         this.valuePath = this.gaugeGroup.append("path").classed("value-arc", true);
@@ -235,6 +241,8 @@ export class Visual implements IVisual {
         // Value needle (tachometer style, from centre)
         this.targetNeedle = this.gaugeGroup.append("path").classed("value-needle", true);
         this.needleHub = this.gaugeGroup.append("circle").classed("needle-hub", true);
+        // Board v2 hub: coloured ring + dark inner dot (.hub / .hubi)
+        this.needleHubInner = this.gaugeGroup.append("circle").classed("needle-hub-inner", true);
 
         // Target indicators
         this.targetLine = this.gaugeGroup.append("line").classed("target-line", true);
@@ -588,23 +596,87 @@ export class Visual implements IVisual {
             // under HC would still read as colour-adjacent state, so the
             // HC path stays untouched — same convention as every other
             // colour-only affordance in this suite).
-            const LIT_OPACITY = this.isHighContrast ? baseZoneOpacity : (useGradient ? 0.95 : 0.55);
-            const DIM_OPACITY = this.isHighContrast ? baseZoneOpacity : (useGradient ? 0.35 : 0.12);
+            // Board v2 values (.zarc 0.32 / .zarc.active 1) — the yeet
+            // decision retires the old 0.55/0.12 & gradient-tuned pairs.
+            const LIT_OPACITY = this.isHighContrast ? baseZoneOpacity : 1.0;
+            const DIM_OPACITY = this.isHighContrast ? baseZoneOpacity : 0.32;
             const zone1Opacity = currentVal <= zone1End ? LIT_OPACITY : DIM_OPACITY;
             const zone2Opacity = (currentVal > zone1End && currentVal <= zone2End) ? LIT_OPACITY : DIM_OPACITY;
             const zone3Opacity = currentVal > zone2End ? LIT_OPACITY : DIM_OPACITY;
 
-            this.drawArc(this.zone1Path, arcGen, innerRadius, outerRadius,
-                startAngle, angleScale(zone1End),
-                z1Fill, zone1Opacity);
-
-            this.drawArc(this.zone2Path, arcGen, innerRadius, outerRadius,
-                angleScale(zone1End), angleScale(zone2End),
-                z2Fill, zone2Opacity);
-
-            this.drawArc(this.zone3Path, arcGen, innerRadius, outerRadius,
-                angleScale(zone2End), endAngle,
-                z3Fill, zone3Opacity);
+            // ── Zones: board v2 face (GAUGE-02 remix) ──────────────────
+            // Hard cutover to the Codex Zone Gauge board look (Decision
+            // 2026-07-17): round-cap stroked arcs (.zarc) for the Solid
+            // treatment, LED blocks for Segmented (the default, composite
+            // reference top-left tile). Lit zone glows on dark canvases;
+            // the other zones dim to the board's 0.32.
+            const rMid = (innerRadius + outerRadius) / 2;
+            const strokeArcD = (r: number, a0: number, a1: number): string => {
+                const px = (a: number) => `${(r * Math.sin(a)).toFixed(2)} ${(-r * Math.cos(a)).toFixed(2)}`;
+                const lg = Math.abs(a1 - a0) > Math.PI ? 1 : 0;
+                return `M ${px(a0)} A ${r} ${r} 0 ${lg} 1 ${px(a1)}`;
+            };
+            const treatment = String(this.formattingSettings.gaugeStyleCard.zoneTreatment.value.value || "segmented");
+            const glowOK = !this.isHighContrast && theme === "dark";
+            const zoneSpecs = [
+                { path: this.zone1Path, a0: startAngle, a1: angleScale(zone1End), fill: z1Fill, color: z1Color, opacity: zone1Opacity, lit: zone1Opacity === LIT_OPACITY },
+                { path: this.zone2Path, a0: angleScale(zone1End), a1: angleScale(zone2End), fill: z2Fill, color: z2Color, opacity: zone2Opacity, lit: zone2Opacity === LIT_OPACITY },
+                { path: this.zone3Path, a0: angleScale(zone2End), a1: endAngle, fill: z3Fill, color: z3Color, opacity: zone3Opacity, lit: zone3Opacity === LIT_OPACITY },
+            ];
+            this.zoneSegGroup.selectAll("*").remove();
+            if (treatment === "solid") {
+                this.zoneSegGroup.style("display", "none");
+                for (const z of zoneSpecs) {
+                    if (z.a1 <= z.a0) { z.path.style("display", "none"); continue; }
+                    z.path
+                        .attr("d", strokeArcD(rMid, z.a0, z.a1))
+                        .attr("fill", "none")
+                        .attr("stroke", z.fill)
+                        .attr("stroke-width", thickness)
+                        .attr("stroke-linecap", "round")
+                        .attr("opacity", z.opacity)
+                        .style("filter", glowOK && z.lit ? `drop-shadow(0 0 ${Math.max(4, thickness * 0.4)}px ${z.color})` : null)
+                        .style("display", null);
+                }
+            } else {
+                for (const z of zoneSpecs) z.path.style("display", "none");
+                this.zoneSegGroup.style("display", null);
+                const pitch = Math.max(0.06, (thickness * 1.55) / rMid);
+                const duty = 0.68;
+                for (const z of zoneSpecs) {
+                    const span = z.a1 - z.a0;
+                    if (span <= 0) continue;
+                    const n = Math.max(1, Math.round(span / pitch));
+                    const p = span / n;
+                    for (let i = 0; i < n; i++) {
+                        const b0 = z.a0 + i * p + p * (1 - duty) / 2;
+                        const b1 = z.a0 + i * p + p * (1 + duty) / 2;
+                        this.zoneSegGroup.append("path")
+                            .attr("d", strokeArcD(rMid, b0, b1))
+                            .attr("fill", "none")
+                            .attr("stroke", z.fill)
+                            .attr("stroke-width", thickness)
+                            .attr("stroke-linecap", "butt")
+                            .attr("opacity", z.opacity)
+                            .style("filter", glowOK && z.lit ? `drop-shadow(0 0 ${Math.max(3, thickness * 0.3)}px ${z.color})` : null);
+                    }
+                }
+            }
+            // Scale endpoint labels (board .gend) at the arc ends
+            const endLabelClr = this.isHighContrast ? this.hcForeground : (theme === "dark" ? "#8f8ab8" : "#6a6a82");
+            const endLabelR = rMid + thickness * 0.5 + 12;
+            for (const [angle, txt] of [[startAngle, minVal], [endAngle, maxVal]] as [number, number][]) {
+                this.zoneSegGroup.append("text")
+                    .attr("x", endLabelR * Math.sin(angle))
+                    .attr("y", -endLabelR * Math.cos(angle) + 4)
+                    .attr("text-anchor", "middle")
+                    .attr("fill", endLabelClr)
+                    .style("font-family", "Segoe UI, sans-serif")
+                    .style("font-size", "12px")
+                    .style("font-weight", "600")
+                    .text(String(Math.round(txt * 10) / 10));
+            }
+            if (treatment === "solid") this.zoneSegGroup.style("display", null); // endpoint labels live here for both treatments; solid re-shows the (now label-only) group
 
             // ── Value colour (matches whichever zone the needle is in) ──
             let valueColor: string;
@@ -622,13 +694,34 @@ export class Visual implements IVisual {
             const valueOuter = outerRadius - 2;
             const valueEndAngle = angleScale(currentVal);
 
-            const showArc = valueStyle === "arc" || valueStyle === "both";
+            // GAUGE-03 Value Arc options ride on top of the existing
+            // valueStyle idiom: Hidden suppresses the arc, Thin band swaps
+            // the tinted ring for a slim outer stroke, and the opacity
+            // slider modulates either.
+            const vaCfgR = this.formattingSettings.valueArcCard;
+            const vaStyleR = String(vaCfgR.arcStyle.value.value || "overlay");
+            const vaAlphaR = Math.max(0, Math.min(1, (vaCfgR.opacity.value ?? 100) / 100));
+            const showArc = (valueStyle === "arc" || valueStyle === "both") && vaStyleR !== "hidden";
             const showNeedle = valueStyle === "needle" || valueStyle === "both";
 
             // Value arc — translucent overlay so zone colours stay primary.
             // Zones show through tinted by the value colour where the value reaches.
-            const VALUE_ARC_OPACITY = 0.25;
-            if (showArc) {
+            const VALUE_ARC_OPACITY = 0.25 * vaAlphaR;
+            if (showArc && vaStyleR === "band") {
+                // Thin band: slim stroke just outside the zone track (no
+                // ring tween — the band snaps to the value).
+                this.valuePath
+                    .attr("d", strokeArcD(outerRadius + 3, startAngle, valueEndAngle))
+                    .attr("fill", "none")
+                    .attr("stroke", valueColor)
+                    .attr("stroke-width", 4)
+                    .attr("stroke-linecap", "round")
+                    .attr("opacity", vaAlphaR)
+                    .style("display", null);
+            } else if (showArc) {
+                // Tinted overlay (the pre-existing ring) — ensure any prior
+                // band-mode stroke attrs are cleared before the fill render.
+                this.valuePath.attr("stroke", null).attr("stroke-width", null);
                 if (animDuration > 0) {
                     const prevAngle = this.previousValueAngle ?? startAngle;
                     (this.valuePath as any)
@@ -675,9 +768,13 @@ export class Visual implements IVisual {
                 // than inventing a new property. An explicit Needle Color
                 // override still resolves untouched (D-16).
                 const customNeedleColor = valueCfg.needleColor.value.value;
-                const autoNeedleColor = theme === "light" ? "#000000" : valueColor;
+                // Board v2 needle: brand cyan + glow on dark (.needle
+                // fill #00d9ff), ink on light (.ltcol .needle #14141f).
+                // Explicit Needle Color override still wins (D-16).
+                const autoNeedleColor = theme === "light" ? "#14141f" : "#00d9ff";
                 const nColor = this.isHighContrast ? this.hcForeground
                     : (customNeedleColor && customNeedleColor.length > 0 ? customNeedleColor : autoNeedleColor);
+                const needleGlow = (!this.isHighContrast && theme === "dark") ? `drop-shadow(0 0 5px ${nColor})` : null;
                 const needleLen = outerRadius + 4;
                 const needleWidth = Math.max(3, thickness * 0.15);
                 const hubRadius = Math.max(5, thickness * 0.3);
@@ -697,6 +794,7 @@ export class Visual implements IVisual {
                     const prev = this.previousValueAngle ?? startAngle;
                     (this.targetNeedle as any)
                         .attr("fill", nColor)
+                        .style("filter", needleGlow)
                         .style("display", null)
                         .transition()
                         .duration(animDuration)
@@ -708,6 +806,7 @@ export class Visual implements IVisual {
                     this.targetNeedle
                         .attr("d", buildNeedlePath(valueEndAngle))
                         .attr("fill", nColor)
+                        .style("filter", needleGlow)
                         .style("display", null);
                 }
 
@@ -715,10 +814,18 @@ export class Visual implements IVisual {
                     .attr("cx", 0).attr("cy", 0)
                     .attr("r", hubRadius)
                     .attr("fill", nColor)
+                    .style("filter", needleGlow)
+                    .style("display", null);
+                // Board hub inner dot (.hubi): dark canvas ink / white
+                this.needleHubInner
+                    .attr("cx", 0).attr("cy", 0)
+                    .attr("r", Math.max(2, hubRadius * 0.45))
+                    .attr("fill", this.isHighContrast ? this.hcBackground : (theme === "dark" ? "#0d0d24" : "#ffffff"))
                     .style("display", null);
             } else {
                 this.targetNeedle.style("display", "none");
                 this.needleHub.style("display", "none");
+                this.needleHubInner.style("display", "none");
             }
 
             // ── Target marker ───────────────────────────────────────────
@@ -930,6 +1037,8 @@ export class Visual implements IVisual {
                     .style("font-style", valueTextStyle)
                     .style("text-decoration", valueDecoration)
                     .style("fill", effectiveValueColor)
+                    // Board .gv glow: value radiates its own colour on dark
+                    .style("filter", (!this.isHighContrast && theme === "dark") ? `drop-shadow(0 0 8px ${effectiveValueColor})` : null)
                     .style("display", null);
 
                 // Counter animation: tween from previous value to current
