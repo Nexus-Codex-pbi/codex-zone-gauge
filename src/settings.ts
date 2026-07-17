@@ -375,6 +375,70 @@ class ValueDisplayCard extends FormattingSettingsCard {
     ];
 }
 
+// ─── Gauge Style (GAUGE-02, 7-style rebuild per GAUGE-01-CONCEPT-PICK) ────
+// Decisions 2026-07-17: remix is THE look (hard cutover — old reports get it
+// too); segmented zones are the remix default treatment.
+export class GaugeStyleSettings extends FormattingSettingsCard {
+    name = "gaugeStyle";
+    displayName = "Gauge Style";
+
+    style = new formattingSettings.ItemDropdown({
+        name: "style",
+        displayName: "Style",
+        items: [
+            { displayName: "Zone Gauge (Remix)", value: "remix" },
+            { displayName: "Pressure Dial", value: "pressureDial" },
+            { displayName: "Speedometer", value: "speedometer" },
+            { displayName: "Tachometer", value: "tachometer" },
+            { displayName: "Progress Ring", value: "progressRing" },
+            { displayName: "Segmented Meter", value: "segmentedMeter" },
+            { displayName: "Thermometer", value: "thermometer" },
+        ],
+        value: { displayName: "Zone Gauge (Remix)", value: "remix" },
+    });
+    zoneTreatment = new formattingSettings.ItemDropdown({
+        name: "zoneTreatment",
+        displayName: "Zone treatment",
+        items: [
+            { displayName: "Segmented", value: "segmented" },
+            { displayName: "Solid", value: "solid" },
+        ],
+        value: { displayName: "Segmented", value: "segmented" },
+    });
+
+    slices: FormattingSettingsSlice[] = [this.style, this.zoneTreatment];
+}
+
+// ─── Value Arc (GAUGE-03, absorbs kanban #29) ─────────────────────────────
+// Hidden from the pane while a non-arc style is active (Decision 2026-07-17)
+// — visibility is flipped in visual.ts after the style is known.
+export class ValueArcSettings extends FormattingSettingsCard {
+    name = "valueArc";
+    displayName = "Value Arc";
+
+    arcStyle = new formattingSettings.ItemDropdown({
+        name: "arcStyle",
+        displayName: "Style",
+        items: [
+            { displayName: "Tinted overlay", value: "overlay" },
+            { displayName: "Thin band", value: "band" },
+            { displayName: "Hidden", value: "hidden" },
+        ],
+        value: { displayName: "Tinted overlay", value: "overlay" },
+    });
+    opacity = new formattingSettings.Slider({
+        name: "opacity",
+        displayName: "Opacity",
+        value: 100,
+        options: {
+            minValue: { type: powerbi.visuals.ValidatorType.Min, value: 0 },
+            maxValue: { type: powerbi.visuals.ValidatorType.Max, value: 100 }
+        }
+    });
+
+    slices: FormattingSettingsSlice[] = [this.arcStyle, this.opacity];
+}
+
 export class VisualFormattingSettingsModel extends FormattingSettingsModel {
     titleSettingsCard = new TitleSettings();
     gaugeSettingsCard = new GaugeSettingsCard();
@@ -401,6 +465,8 @@ export class VisualFormattingSettingsModel extends FormattingSettingsModel {
 
     visualBorder = new BorderSettings();
     cardSignature = new CardSignatureSettings();
+    gaugeStyleCard = new GaugeStyleSettings();
+    valueArcCard = new ValueArcSettings();
 
-    cards = [this.titleSettingsCard, this.gaugeSettingsCard, this.zonesCard, this.targetSettingsCard, this.comparisonSettingsCard, this.valueDisplayCard, this.background, this.cardSignature, this.visualBorder];
+    cards = [this.gaugeStyleCard, this.titleSettingsCard, this.gaugeSettingsCard, this.zonesCard, this.targetSettingsCard, this.comparisonSettingsCard, this.valueDisplayCard, this.valueArcCard, this.background, this.cardSignature, this.visualBorder];
 }

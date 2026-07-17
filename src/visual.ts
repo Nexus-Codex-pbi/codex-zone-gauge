@@ -33,6 +33,11 @@ import { surfaceTokens } from "./shared/designTokens";
 import { makeCornerBrackets, CardSignatureHandle } from "./shared/cardSignature";
 import { applyCardSignature } from "./shared/cardSignatureSettings";
 import { applyBorder } from "./shared/borderSettings";
+import { GaugeRenderCtx, GaugeZone } from "./renderers/helpers";
+import { renderPressureDial, renderSpeedometer, renderTachometer } from "./renderers/dialFamily";
+import { renderProgressRing } from "./renderers/ring";
+import { renderSegmentedMeter } from "./renderers/meter";
+import { renderThermometer } from "./renderers/thermometer";
 
 /** Luminance-based theme pick (matches the pbiKpiCard v3 pilot's own
  * 0.55 threshold convention) — this visual's Background Colour default
@@ -104,6 +109,7 @@ export class Visual implements IVisual {
     // the full-tile root, painted above the gauge SVG. pointer-events:none.
     private cornerSignature: CardSignatureHandle | null = null;
     private gaugeGroup: Selection<SVGGElement, unknown, null, undefined>;
+    private altGroup: Selection<SVGGElement, unknown, null, undefined>;
 
     // Conditional formatting (fx) state — Zone 3 (Success) Colour (TRANS-04)
     private zone3ColorHelper: ColorHelper | null = null;
@@ -209,6 +215,11 @@ export class Visual implements IVisual {
         this.titleEl = this.svg.append("text").classed("zone-gauge-title", true);
 
         this.gaugeGroup = this.svg.append("g").classed("gauge-group", true);
+
+        // Alternate-instrument group (GAUGE-02 style dispatch) — non-remix
+        // renderers own and rebuild this group; exactly one of
+        // gaugeGroup/altGroup is visible per render.
+        this.altGroup = this.svg.append("g").classed("alt-instrument-group", true);
 
         // Border arc (behind everything)
         this.borderPath = this.gaugeGroup.append("path").classed("border-arc", true);
@@ -316,6 +327,10 @@ export class Visual implements IVisual {
 
             if (parsed === null) {
                 this.currentTooltipItems = [];
+                // Empty state lives in gaugeGroup — make sure it's the
+                // visible group even if the last render was an alt style.
+                this.altGroup.style("display", "none").selectAll("*").remove();
+                this.gaugeGroup.style("display", null);
                 this.renderEmpty(width, height);
                 this.eventService.renderingFinished(options);
                 return;
@@ -418,6 +433,69 @@ export class Visual implements IVisual {
             // Zone boundaries clamped to scale range
             const zone1End = clamp(zonesCfg.zone1End.value, minVal, maxVal);
             const zone2End = clamp(zonesCfg.zone2End.value, zone1End, maxVal);
+
+            // ─── Style dispatch (GAUGE-02, 7-style rebuild) ─────────────
+            // Remix (default) renders through the long-standing path below,
+            // untouched. The six gallery instruments render into altGroup
+            // via their own renderers. Value Arc pane card is HIDDEN while
+            // a non-arc style is active; zone treatment applies to the
+            // remix face only (Decisions 2026-07-17).
+            const styleKey = String(this.formattingSettings.gaugeStyleCard.style.value.value || "remix");
+            const isArcStyle = ["remix", "pressureDial", "speedometer", "tachometer", "progressRing"].indexOf(styleKey) >= 0;
+            this.formattingSettings.valueArcCard.visible = isArcStyle;
+            this.formattingSettings.gaugeStyleCard.zoneTreatment.visible = styleKey === "remix";
+
+            if (styleKey !== "remix") {
+                this.gaugeGroup.style("display", "none");
+                this.altGroup.style("display", null);
+
+                const vfmt = valueCfg.valueFormat.value.value as string;
+                const vdec = valueCfg.decimalPlaces.value;
+                const fmtV = (n: number) => vfmt === "percent" ? n.toFixed(vdec) + "%" : n.toFixed(vdec);
+
+                const hcC = this.isHighContrast;
+                const zones: GaugeZone[] = [
+                    { from: minVal, to: zone1End, band: "danger", color: hcC ? this.hcForeground : zonesCfg.zone1Color.value.value },
+                    { from: zone1End, to: zone2End, band: "warning", color: hcC ? this.hcForeground : zonesCfg.zone2Color.value.value },
+                    { from: zone2End, to: maxVal, band: "success", color: hcC ? this.hcForeground : zonesCfg.zone3Color.value.value },
+                ];
+                const vaCfg = this.formattingSettings.valueArcCard;
+                const ctx: GaugeRenderCtx = {
+                    group: this.altGroup.node() as SVGGElement,
+                    defs: this.defs.node() as SVGDefsElement,
+                    width, height, titleHeight,
+                    theme, hc: hcC, hcFg: this.hcForeground, hcBg: this.hcBackground,
+                    min: minVal, max: maxVal, value: currentVal,
+                    target: parsed.target, comparison: parsed.comparison,
+                    valueText: fmtV(currentVal),
+                    unitText: parsed.categoryLabel || "",
+                    showValue: !!valueCfg.showValue.value,
+                    zones,
+                    valueArc: {
+                        style: String(vaCfg.arcStyle.value.value || "overlay") as "overlay" | "band" | "hidden",
+                        opacity: vaCfg.opacity.value ?? 100,
+                    },
+                };
+                switch (styleKey) {
+                    case "pressureDial": renderPressureDial(ctx); break;
+                    case "speedometer": renderSpeedometer(ctx); break;
+                    case "tachometer": renderTachometer(ctx); break;
+                    case "progressRing": renderProgressRing(ctx); break;
+                    case "segmentedMeter": renderSegmentedMeter(ctx); break;
+                    case "thermometer": renderThermometer(ctx); break;
+                }
+                this.previousValue = currentVal;
+
+                this.currentTooltipItems = [{ displayName: "Value", value: fmtV(currentVal) }];
+                if (parsed.categoryLabel) this.currentTooltipItems.push({ displayName: "Category", value: parsed.categoryLabel });
+                if (parsed.target !== null) this.currentTooltipItems.push({ displayName: "Target", value: fmtV(parsed.target) });
+                if (parsed.comparison !== null) this.currentTooltipItems.push({ displayName: "Comparison", value: fmtV(parsed.comparison) });
+
+                this.eventService.renderingFinished(options);
+                return;
+            }
+            this.altGroup.style("display", "none");
+            this.gaugeGroup.style("display", null);
 
             // ── Responsive layout ───────────────────────────────────────
             const padding = 12;

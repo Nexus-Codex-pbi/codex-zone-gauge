@@ -636,6 +636,91 @@
                     }
                 }
             }
+        },
+        "gaugeStyle": {
+            "displayName": "Gauge Style",
+            "properties": {
+                "style": {
+                    "displayName": "Style",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "displayName": "Zone Gauge (Remix)",
+                                "value": "remix"
+                            },
+                            {
+                                "displayName": "Pressure Dial",
+                                "value": "pressureDial"
+                            },
+                            {
+                                "displayName": "Speedometer",
+                                "value": "speedometer"
+                            },
+                            {
+                                "displayName": "Tachometer",
+                                "value": "tachometer"
+                            },
+                            {
+                                "displayName": "Progress Ring",
+                                "value": "progressRing"
+                            },
+                            {
+                                "displayName": "Segmented Meter",
+                                "value": "segmentedMeter"
+                            },
+                            {
+                                "displayName": "Thermometer",
+                                "value": "thermometer"
+                            }
+                        ]
+                    }
+                },
+                "zoneTreatment": {
+                    "displayName": "Zone treatment",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "displayName": "Segmented",
+                                "value": "segmented"
+                            },
+                            {
+                                "displayName": "Solid",
+                                "value": "solid"
+                            }
+                        ]
+                    }
+                }
+            }
+        },
+        "valueArc": {
+            "displayName": "Value Arc",
+            "properties": {
+                "arcStyle": {
+                    "displayName": "Style",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "displayName": "Tinted overlay",
+                                "value": "overlay"
+                            },
+                            {
+                                "displayName": "Thin band",
+                                "value": "band"
+                            },
+                            {
+                                "displayName": "Hidden",
+                                "value": "hidden"
+                            }
+                        ]
+                    }
+                },
+                "opacity": {
+                    "displayName": "Opacity",
+                    "type": {
+                        "numeric": true
+                    }
+                }
+            }
         }
     },
     "dataViewMappings": [
