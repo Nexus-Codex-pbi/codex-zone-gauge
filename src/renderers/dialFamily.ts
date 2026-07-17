@@ -43,10 +43,17 @@ function renderDial(ctx: GaugeRenderCtx, spec: DialSpec, redSpan: { f0: number; 
     // Wedge ends exactly at the scale end: the board's fa(...,210,-30) IS
     // a0 - span, NOT a further -30 (transcription bug caught in Neil's
     // live QA — the dome spilled 30° past the top value).
+    // Dial face style (pane; board faceMap port): Auto = dome gradient,
+    // flat colours otherwise, None keeps only the outline ring. The three
+    // flat faces are DARK — everything sitting ON the face (ticks, numbers,
+    // band, target tick, value arc, needle, hub) adapts to the face like
+    // text adapts to the Background card (Neil live-QA 2026-07-17: light-
+    // canvas tokens washed out on slate/navy/ink faces).
+    const FACE_MAP: Record<string, string> = { slate: "#1b1b3a", deepNavy: "#07223a", ink: "#04040e", none: "transparent" };
+    const faceIsDarkFlat = spec.face && !hc && ["slate", "deepNavy", "ink"].indexOf(ctx.dialFace) >= 0;
+    const ft = faceIsDarkFlat ? galleryTokens("dark") : t;
+    const faceThemeKey = faceIsDarkFlat ? "dark" as const : ctx.theme;
     if (spec.face) {
-        // Dial face style (pane; board faceMap port): Auto = dome gradient,
-        // flat colours otherwise, None keeps only the outline ring.
-        const FACE_MAP: Record<string, string> = { slate: "#1b1b3a", deepNavy: "#07223a", ink: "#04040e", none: "transparent" };
         const faceFill = hc ? bg
             : (ctx.dialFace && ctx.dialFace !== "auto")
                 ? (FACE_MAP[ctx.dialFace] ?? domeFill(ctx.theme))
@@ -66,7 +73,7 @@ function renderDial(ctx: GaugeRenderCtx, spec: DialSpec, redSpan: { f0: number; 
     // Red band (pressure dial / tachometer) — spans the ACTUAL danger
     // zone in its configured colour (see dangerSpan note in helpers).
     if (spec.bandR != null && redSpan != null && redSpan.f1 > redSpan.f0) {
-        const bandClr = hc ? fg : (redSpan.color || t.danger);
+        const bandClr = hc ? fg : (redSpan.color || ft.danger);
         g.append("path")
             .attr("d", arcPath(cx, cy, spec.bandR, a0 - span * redSpan.f0, a0 - span * redSpan.f1))
             .attr("fill", "none").attr("stroke", bandClr)
@@ -79,16 +86,16 @@ function renderDial(ctx: GaugeRenderCtx, spec: DialSpec, redSpan: { f0: number; 
     const ticks = dialTicks(cx, cy, a0, span, cfg);
     for (const m of ticks.min) {
         g.append("line").attr("x1", m.x1).attr("y1", m.y1).attr("x2", m.x2).attr("y2", m.y2)
-            .attr("stroke", hc ? fg : t.tick).attr("stroke-width", 2).attr("stroke-linecap", "round");
+            .attr("stroke", hc ? fg : ft.tick).attr("stroke-width", 2).attr("stroke-linecap", "round");
     }
     for (const m of ticks.maj) {
         g.append("line").attr("x1", m.x1).attr("y1", m.y1).attr("x2", m.x2).attr("y2", m.y2)
-            .attr("stroke", hc ? fg : (m.red ? t.danger : t.maj)).attr("stroke-width", 2.6).attr("stroke-linecap", "round");
+            .attr("stroke", hc ? fg : (m.red ? ft.danger : ft.maj)).attr("stroke-width", 2.6).attr("stroke-linecap", "round");
     }
     for (const n of ticks.nums) {
         g.append("text").attr("x", n.x).attr("y", n.y)
             .attr("text-anchor", "middle").attr("dominant-baseline", "central")
-            .attr("fill", hc ? fg : (n.red ? t.danger : t.num))
+            .attr("fill", hc ? fg : (n.red ? ft.danger : ft.num))
             .style("font-family", SEGOE).style("font-size", "13px").style("font-weight", "600")
             .text(n.label);
     }
@@ -98,7 +105,7 @@ function renderDial(ctx: GaugeRenderCtx, spec: DialSpec, redSpan: { f0: number; 
         const aT = a0 - span * fraction(ctx, ctx.target);
         const to = polar(cx, cy, spec.cfg.rOut + 6, aT), ti = polar(cx, cy, spec.cfg.rMajIn - 4, aT);
         g.append("line").attr("x1", to.x).attr("y1", to.y).attr("x2", ti.x).attr("y2", ti.y)
-            .attr("stroke", hc ? fg : (ctx.targetColor || t.tgtc)).attr("stroke-width", 3).attr("stroke-linecap", "round");
+            .attr("stroke", hc ? fg : (ctx.targetColor || ft.tgtc)).attr("stroke-width", 3).attr("stroke-linecap", "round");
     }
 
     // Value Arc (GAUGE-03) — sweep from scale start to the value
@@ -109,7 +116,7 @@ function renderDial(ctx: GaugeRenderCtx, spec: DialSpec, redSpan: { f0: number; 
         const w = ctx.valueArc.style === "band" ? 4 : (spec.cfg.rOut - spec.cfg.rMajIn) + 4;
         g.append("path")
             .attr("d", arcPath(cx, cy, r, a0, a0 - span * vFrac))
-            .attr("fill", "none").attr("stroke", hc ? fg : t.prog)
+            .attr("fill", "none").attr("stroke", hc ? fg : ft.prog)
             .attr("stroke-width", w).attr("stroke-linecap", "round")
             .attr("opacity", (ctx.valueArc.style === "overlay" ? 0.28 : 1) * alpha);
     }
@@ -119,11 +126,11 @@ function renderDial(ctx: GaugeRenderCtx, spec: DialSpec, redSpan: { f0: number; 
     g.append("polygon")
         .attr("points", needlePoints(cx, cy, spec.needleLen, 6))
         .attr("transform", needleTransform(cx, cy, a0 - span * vFrac))
-        .attr("fill", hc ? fg : (needleClr ?? needleFill(ctx.theme)))
+        .attr("fill", hc ? fg : (needleClr ?? needleFill(faceThemeKey)))
         .attr("stroke", hc ? bg : null).attr("stroke-width", hc ? 2 : null);
-    g.append("circle").attr("cx", cx).attr("cy", cy).attr("r", 9).attr("fill", hc ? fg : hubFill(ctx.theme));
+    g.append("circle").attr("cx", cx).attr("cy", cy).attr("r", 9).attr("fill", hc ? fg : hubFill(faceThemeKey));
     if (!hc) g.append("circle").attr("cx", cx - 3).attr("cy", cy - 3).attr("r", 3).attr("fill", "rgba(255,255,255,0.6)");
-    g.append("circle").attr("cx", cx).attr("cy", cy).attr("r", 3).attr("fill", hc ? bg : t.hubi);
+    g.append("circle").attr("cx", cx).attr("cy", cy).attr("r", 3).attr("fill", hc ? bg : ft.hubi);
 
     // Value + unit — pane colour/font overrides win; board look is the auto
     if (ctx.showValue) {
