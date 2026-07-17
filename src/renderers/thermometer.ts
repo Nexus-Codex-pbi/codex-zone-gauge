@@ -7,7 +7,7 @@
 
 import {
     GaugeRenderCtx, galleryTokens, clearGroup, fitTransform, fraction,
-    ensureGradients, thermFill, SEGOE, TNUM,
+    ensureGradients, thermFill, applyFont, TNUM, SEGOE,
 } from "./helpers";
 
 const TOP_Y = 24, BOT_Y = 176, H = BOT_Y - TOP_Y;
@@ -56,8 +56,8 @@ export function renderThermometer(ctx: GaugeRenderCtx): void {
         g.append("line").attr("x1", TX - 8).attr("y1", y).attr("x2", TX + TW + 8).attr("y2", y)
             .attr("stroke", hc ? fg : clr).attr("stroke-width", w).attr("stroke-linecap", "round");
     };
-    if (ctx.target != null) tickAt(ctx.target, t.tgtc, 3);
-    if (ctx.comparison != null) tickAt(ctx.comparison, t.unit, 2);
+    if (ctx.target != null) tickAt(ctx.target, ctx.targetColor || t.tgtc, 3);
+    if (ctx.comparison != null) tickAt(ctx.comparison, ctx.comparisonColor || t.unit, 2);
 
     // Reading in the bulb (board) + big value beside the column
     if (ctx.showValue) {
@@ -66,17 +66,17 @@ export function renderThermometer(ctx: GaugeRenderCtx): void {
             .style("font-family", SEGOE).style("font-size", "18px")
             .style("font-weight", "700").style("font-feature-settings", TNUM)
             .text(ctx.valueText);
-        g.append("text").attr("x", 150).attr("y", 104).attr("text-anchor", "start")
-            .attr("fill", hc ? fg : t.val)
-            .style("font-family", SEGOE).style("font-size", "30px")
-            .style("font-weight", "700").style("font-feature-settings", TNUM)
+        const vt = g.append("text").attr("x", 150).attr("y", 104).attr("text-anchor", "start")
+            .attr("fill", hc ? fg : (ctx.valueColor || t.val))
+            .style("font-feature-settings", TNUM)
             .text(ctx.valueText);
-        if (ctx.unitText) {
-            g.append("text").attr("x", 150).attr("y", 124).attr("text-anchor", "start")
-                .attr("fill", hc ? fg : t.unit)
-                .style("font-family", SEGOE).style("font-size", "12px")
-                .style("font-weight", "600").style("letter-spacing", "0.08em")
+        applyFont(vt, ctx.valueFont, 30, "700");
+        if (ctx.unitText && ctx.showUnit) {
+            const ut = g.append("text").attr("x", 150).attr("y", 124).attr("text-anchor", "start")
+                .attr("fill", hc ? fg : (ctx.unitColor || t.unit))
+                .style("letter-spacing", "0.08em")
                 .text(ctx.unitText);
+            applyFont(ut, ctx.unitFont, 12, "600");
         }
     }
 }

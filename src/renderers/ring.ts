@@ -5,7 +5,7 @@
 
 import {
     GaugeRenderCtx, galleryTokens, arcPath, clearGroup, fitTransform,
-    ensureGradients, progFill, SEGOE, TNUM,
+    ensureGradients, progFill, applyFont, TNUM, SEGOE,
 } from "./helpers";
 
 export function renderProgressRing(ctx: GaugeRenderCtx): void {
@@ -48,14 +48,14 @@ export function renderProgressRing(ctx: GaugeRenderCtx): void {
     }
 
     if (ctx.showValue) {
-        g.append("text").attr("x", cx).attr("y", 104).attr("text-anchor", "middle")
-            .attr("fill", hc ? fg : t.val)
-            .style("font-family", SEGOE).style("font-size", "40px")
-            .style("font-weight", "700").style("font-feature-settings", TNUM)
+        const vt = g.append("text").attr("x", cx).attr("y", 104).attr("text-anchor", "middle")
+            .attr("fill", hc ? fg : (ctx.valueColor || t.val))
+            .style("font-feature-settings", TNUM)
             .text(`${Math.round(pv)}%`);
-        g.append("text").attr("x", cx).attr("y", 130).attr("text-anchor", "middle")
-            .attr("fill", hc ? fg : (pv > 100 ? t.over : t.unit))
-            .style("font-family", SEGOE).style("font-size", "12px").style("font-weight", pv > 100 ? "700" : "600")
+        applyFont(vt, ctx.valueFont, 40, "700");
+        const ut = g.append("text").attr("x", cx).attr("y", 130).attr("text-anchor", "middle")
+            .attr("fill", hc ? fg : (pv > 100 ? t.over : (ctx.unitColor || t.unit)))
             .text(pv > 100 ? `+${Math.round(pv - 100)}% over target` : (ctx.unitText || "of target"));
+        applyFont(ut, ctx.unitFont, 12, pv > 100 ? "700" : "600");
     }
 }

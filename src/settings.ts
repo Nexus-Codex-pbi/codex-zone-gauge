@@ -169,19 +169,14 @@ class ZonesCard extends FormattingSettingsCard {
 
     name: string = "zones";
     displayName: string = "Zones";
+    // Gradient/callout slices retired with the remix (2026-07-17) — the
+    // instruments consume thresholds + colours only.
     slices: Array<FormattingSettingsSlice> = [
         this.zone1End,
         this.zone1Color,
         this.zone2End,
         this.zone2Color,
-        this.zone3Color,
-        this.useGradient,
-        this.showZoneLabels,
-        this.zoneLabelPosition,
-        this.zone1Label,
-        this.zone2Label,
-        this.zone3Label,
-        this.zoneLabelFontSize
+        this.zone3Color
     ];
 }
 
@@ -219,11 +214,11 @@ class ComparisonSettingsCard extends FormattingSettingsCard {
 
     name: string = "comparisonSettings";
     displayName: string = "Comparison";
+    // Style/label slices retired with the remix — instruments render the
+    // comparison as a tick in Comparison Color.
     slices: Array<FormattingSettingsSlice> = [
         this.showComparison,
-        this.comparisonStyle,
-        this.comparisonColor,
-        this.comparisonLabel
+        this.comparisonColor
     ];
 }
 
@@ -261,9 +256,10 @@ class TargetSettingsCard extends FormattingSettingsCard {
 
     name: string = "targetSettings";
     displayName: string = "Target";
+    // targetStyle retired with the remix — instruments render the target
+    // as a tick in Target Color.
     slices: Array<FormattingSettingsSlice> = [
         this.showTarget,
-        this.targetStyle,
         this.targetColor
     ];
 }
@@ -361,9 +357,10 @@ class ValueDisplayCard extends FormattingSettingsCard {
 
     name: string = "valueDisplay";
     displayName: string = "Value Display";
+    // valueStyle/needleColor retired with the remix (instrument needles are
+    // part of each style's board look). Fonts + colours stay and are wired
+    // into every instrument's value/unit line.
     slices: Array<FormattingSettingsSlice> = [
-        this.valueStyle,
-        this.needleColor,
         this.showValue,
         this.valueFormat,
         this.decimalPlaces,
@@ -382,11 +379,14 @@ export class GaugeStyleSettings extends FormattingSettingsCard {
     name = "gaugeStyle";
     displayName = "Gauge Style";
 
+    // Remix retired (Neil live-QA 2026-07-17: "do away with the remix") —
+    // the six gallery instruments ARE the visual. Saved "remix" values map
+    // to Pressure Dial in visual.ts; capabilities keep the old enum entries
+    // declared (GUID additive-only).
     style = new formattingSettings.ItemDropdown({
         name: "style",
         displayName: "Style",
         items: [
-            { displayName: "Zone Gauge (Remix)", value: "remix" },
             { displayName: "Pressure Dial", value: "pressureDial" },
             { displayName: "Speedometer", value: "speedometer" },
             { displayName: "Tachometer", value: "tachometer" },
@@ -394,19 +394,10 @@ export class GaugeStyleSettings extends FormattingSettingsCard {
             { displayName: "Segmented Meter", value: "segmentedMeter" },
             { displayName: "Thermometer", value: "thermometer" },
         ],
-        value: { displayName: "Zone Gauge (Remix)", value: "remix" },
-    });
-    zoneTreatment = new formattingSettings.ItemDropdown({
-        name: "zoneTreatment",
-        displayName: "Zone treatment",
-        items: [
-            { displayName: "Segmented", value: "segmented" },
-            { displayName: "Solid", value: "solid" },
-        ],
-        value: { displayName: "Segmented", value: "segmented" },
+        value: { displayName: "Pressure Dial", value: "pressureDial" },
     });
 
-    slices: FormattingSettingsSlice[] = [this.style, this.zoneTreatment];
+    slices: FormattingSettingsSlice[] = [this.style];
 }
 
 // ─── Value Arc (GAUGE-03, absorbs kanban #29) ─────────────────────────────
@@ -468,5 +459,8 @@ export class VisualFormattingSettingsModel extends FormattingSettingsModel {
     gaugeStyleCard = new GaugeStyleSettings();
     valueArcCard = new ValueArcSettings();
 
-    cards = [this.gaugeStyleCard, this.titleSettingsCard, this.gaugeSettingsCard, this.zonesCard, this.targetSettingsCard, this.comparisonSettingsCard, this.valueDisplayCard, this.valueArcCard, this.background, this.cardSignature, this.visualBorder];
+    // gaugeSettingsCard retired from the pane with the remix (type/thickness/
+    // animation/legacy border were remix-only knobs; shared Border card owns
+    // borders). Instance kept so persisted values still deserialize.
+    cards = [this.gaugeStyleCard, this.titleSettingsCard, this.zonesCard, this.targetSettingsCard, this.comparisonSettingsCard, this.valueDisplayCard, this.valueArcCard, this.background, this.cardSignature, this.visualBorder];
 }

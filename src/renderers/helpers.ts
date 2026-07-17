@@ -24,6 +24,14 @@ export interface ValueArcConfig {
     opacity: number; // 0-100, 100 = fully opaque
 }
 
+export interface FontOpts {
+    family: string | null;   // null = board default stack
+    size: number | null;     // null/0 = board-proportional size
+    bold: boolean;
+    italic: boolean;
+    underline: boolean;
+}
+
 export interface GaugeRenderCtx {
     group: SVGGElement;          // renderer-owned <g>; cleared + redrawn each render
     defs: SVGDefsElement;        // shared <defs> (gradients ensured once per theme)
@@ -42,6 +50,14 @@ export interface GaugeRenderCtx {
     valueText: string;           // formatted by the visual's existing formatter
     unitText: string;            // label/unit line (may be "")
     showValue: boolean;
+    showUnit: boolean;           // Value Display "Show Label" toggle
+    // Pane colour overrides — null = auto (board/theme token)
+    valueColor: string | null;
+    unitColor: string | null;
+    targetColor: string | null;
+    comparisonColor: string | null;
+    valueFont: FontOpts;
+    unitFont: FontOpts;
     zones: GaugeZone[];
     valueArc: ValueArcConfig;
 }
@@ -219,3 +235,14 @@ export function stateVsTarget(value: number, target: number | null): "succ" | "w
 
 export const SEGOE = "Segoe UI, system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif";
 export const TNUM = '"tnum"';
+
+/** Apply a pane FontControl bundle to a text selection, falling back to the
+ * board's own size/weight when untouched (weightFor idiom). */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function applyFont(sel: any, f: FontOpts, boardPx: number, fallbackWeight: string): void {
+    sel.style("font-family", f.family || SEGOE)
+        .style("font-size", `${(f.size && f.size > 0) ? f.size : boardPx}px`)
+        .style("font-weight", f.bold ? "700" : fallbackWeight)
+        .style("font-style", f.italic ? "italic" : "normal")
+        .style("text-decoration", f.underline ? "underline" : "none");
+}

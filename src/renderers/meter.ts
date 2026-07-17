@@ -7,7 +7,7 @@
 
 import {
     GaugeRenderCtx, galleryTokens, arcPath, polar, clearGroup, fitTransform,
-    fraction, SEGOE, TNUM,
+    fraction, applyFont, TNUM, SEGOE,
 } from "./helpers";
 
 const N = 18, A0 = 190, SPAN = 200, CX = 125, CY = 130, R = 94;
@@ -45,21 +45,21 @@ export function renderSegmentedMeter(ctx: GaugeRenderCtx): void {
         g.append("line").attr("x1", o.x).attr("y1", o.y).attr("x2", i2.x).attr("y2", i2.y)
             .attr("stroke", hc ? fg : clr).attr("stroke-width", w).attr("stroke-linecap", "round");
     };
-    if (ctx.target != null) tickAt(ctx.target, t.tgtc, 3);
-    if (ctx.comparison != null) tickAt(ctx.comparison, t.unit, 2);
+    if (ctx.target != null) tickAt(ctx.target, ctx.targetColor || t.tgtc, 3);
+    if (ctx.comparison != null) tickAt(ctx.comparison, ctx.comparisonColor || t.unit, 2);
 
     if (ctx.showValue) {
-        g.append("text").attr("x", CX).attr("y", 120).attr("text-anchor", "middle")
-            .attr("fill", hc ? fg : t.val)
-            .style("font-family", SEGOE).style("font-size", "30px")
-            .style("font-weight", "700").style("font-feature-settings", TNUM)
+        const vt = g.append("text").attr("x", CX).attr("y", 120).attr("text-anchor", "middle")
+            .attr("fill", hc ? fg : (ctx.valueColor || t.val))
+            .style("font-feature-settings", TNUM)
             .text(ctx.valueText);
-        if (ctx.unitText) {
-            g.append("text").attr("x", CX).attr("y", 140).attr("text-anchor", "middle")
-                .attr("fill", hc ? fg : t.unit)
-                .style("font-family", SEGOE).style("font-size", "12px")
-                .style("font-weight", "600").style("letter-spacing", "0.08em")
+        applyFont(vt, ctx.valueFont, 30, "700");
+        if (ctx.unitText && ctx.showUnit) {
+            const ut = g.append("text").attr("x", CX).attr("y", 140).attr("text-anchor", "middle")
+                .attr("fill", hc ? fg : (ctx.unitColor || t.unit))
+                .style("letter-spacing", "0.08em")
                 .text(ctx.unitText);
+            applyFont(ut, ctx.unitFont, 12, "600");
         }
     }
 }

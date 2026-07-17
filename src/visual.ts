@@ -28,7 +28,7 @@ import { clamp, CODEX_TOKENS } from "./utils";
 import { dataViewWildcard } from "powerbi-visuals-utils-dataviewutils";
 import { ColorHelper } from "powerbi-visuals-utils-colorutils";
 import { toRgba } from "./shared/colorHelpers";
-import { Theme, accentToken } from "./shared/bandEngine";
+import { Theme, accentToken, targetToken } from "./shared/bandEngine";
 import { surfaceTokens } from "./shared/designTokens";
 import { makeCornerBrackets, CardSignatureHandle } from "./shared/cardSignature";
 import { applyCardSignature } from "./shared/cardSignatureSettings";
@@ -280,6 +280,14 @@ export class Visual implements IVisual {
                 VisualFormattingSettingsModel, dataView
             );
 
+            // Legacy persisted Style values ("remix", retired 2026-07-17)
+            // resolve to UNDEFINED against the shrunk dropdown — the
+            // formattingmodel populate does items.find() and old reports
+            // would crash both the render and the pane build. Normalize to
+            // the default entry (caught by the style-sweep legacy scenario).
+            const styleSlice = this.formattingSettings.gaugeStyleCard.style;
+            if (!styleSlice.value) styleSlice.value = styleSlice.items[0];
+
             // v3 theme pick (01-18 Task 4, audit-board polish) — drives the
             // needle's theme-aware default fallback below. Scope guard: this
             // is the ONLY new engine-level primitive Task 4 introduces; no
@@ -426,14 +434,6 @@ export class Visual implements IVisual {
                 this.titleEl.style("display", "none");
             }
 
-            const gaugeType     = gaugeCfg.gaugeType.value.value as string;
-            const thickness     = Math.max(4, gaugeCfg.thickness.value);
-            const animDuration  = Math.max(0, gaugeCfg.animationDuration.value);
-
-            const angles = GAUGE_ANGLES[gaugeType] || GAUGE_ANGLES.semicircle;
-            const startAngle = angles.start;
-            const endAngle   = angles.end;
-
             const minVal = parsed.min;
             const maxVal = Math.max(parsed.max, minVal + 1); // prevent zero-range
             const currentVal = clamp(parsed.value, minVal, maxVal);
@@ -442,18 +442,19 @@ export class Visual implements IVisual {
             const zone1End = clamp(zonesCfg.zone1End.value, minVal, maxVal);
             const zone2End = clamp(zonesCfg.zone2End.value, zone1End, maxVal);
 
-            // ─── Style dispatch (GAUGE-02, 7-style rebuild) ─────────────
-            // Remix (default) renders through the long-standing path below,
-            // untouched. The six gallery instruments render into altGroup
-            // via their own renderers. Value Arc pane card is HIDDEN while
-            // a non-arc style is active; zone treatment applies to the
-            // remix face only (Decisions 2026-07-17).
-            const styleKey = String(this.formattingSettings.gaugeStyleCard.style.value.value || "remix");
-            const isArcStyle = ["remix", "pressureDial", "speedometer", "tachometer", "progressRing"].indexOf(styleKey) >= 0;
+            // ─── Style dispatch (GAUGE-02/QA pivot 2026-07-17) ──────────
+            // The remix is RETIRED (Neil: "do away with the remix") — the six
+            // gallery instruments are the visual. Persisted legacy style
+            // values (remix / unknown) map to the Pressure Dial default.
+            // Value Arc card is pane-hidden on the two non-arc styles.
+            let styleKey = String(this.formattingSettings.gaugeStyleCard.style.value.value || "pressureDial");
+            if (["pressureDial", "speedometer", "tachometer", "progressRing", "segmentedMeter", "thermometer"].indexOf(styleKey) < 0) {
+                styleKey = "pressureDial";
+            }
+            const isArcStyle = ["pressureDial", "speedometer", "tachometer", "progressRing"].indexOf(styleKey) >= 0;
             this.formattingSettings.valueArcCard.visible = isArcStyle;
-            this.formattingSettings.gaugeStyleCard.zoneTreatment.visible = styleKey === "remix";
 
-            if (styleKey !== "remix") {
+            {
                 this.gaugeGroup.style("display", "none");
                 this.altGroup.style("display", null);
 
@@ -468,16 +469,43 @@ export class Visual implements IVisual {
                     { from: zone2End, to: maxVal, band: "success", color: hcC ? this.hcForeground : zonesCfg.zone3Color.value.value },
                 ];
                 const vaCfg = this.formattingSettings.valueArcCard;
+                const tCfg = this.formattingSettings.targetSettingsCard;
+                const cCfg = this.formattingSettings.comparisonSettingsCard;
+                // Auto-sentinels: a picker left on its declared default means
+                // "board/theme token"; an explicit change wins (D-16 idiom).
+                const tClr = tCfg.targetColor.value.value;
+                const cClr = cCfg.comparisonColor.value.value;
+                const fxValueClr = this.valueColorHelper?.getColorForMeasure(dataView?.metadata?.objects, "value") ?? "";
                 const ctx: GaugeRenderCtx = {
                     group: this.altGroup.node() as SVGGElement,
                     defs: this.defs.node() as SVGDefsElement,
                     width, height, titleHeight,
                     theme, hc: hcC, hcFg: this.hcForeground, hcBg: this.hcBackground,
                     min: minVal, max: maxVal, value: currentVal,
-                    target: parsed.target, comparison: parsed.comparison,
+                    target: tCfg.showTarget.value ? parsed.target : null,
+                    comparison: cCfg.showComparison.value ? parsed.comparison : null,
                     valueText: fmtV(currentVal),
                     unitText: parsed.categoryLabel || "",
                     showValue: !!valueCfg.showValue.value,
+                    showUnit: !!valueCfg.showLabel.value,
+                    valueColor: (fxValueClr || valueCfg.valueColor.value.value || "") || null,
+                    unitColor: valueCfg.labelColor.value.value || null,
+                    targetColor: (tClr && tClr !== targetToken("light")) ? tClr : null,
+                    comparisonColor: (cClr && cClr !== "#5e5d5a") ? cClr : null,
+                    valueFont: {
+                        family: valueCfg.valueFontFamily.value || null,
+                        size: valueCfg.valueFontSize.value || null,
+                        bold: !!valueCfg.valueBold.value,
+                        italic: !!valueCfg.valueItalic.value,
+                        underline: !!valueCfg.valueUnderline.value,
+                    },
+                    unitFont: {
+                        family: valueCfg.labelFontFamily.value || null,
+                        size: valueCfg.labelFontSize.value || null,
+                        bold: !!valueCfg.labelBold.value,
+                        italic: !!valueCfg.labelItalic.value,
+                        underline: !!valueCfg.labelUnderline.value,
+                    },
                     zones,
                     valueArc: {
                         style: String(vaCfg.arcStyle.value.value || "overlay") as "overlay" | "band" | "hidden",
@@ -502,651 +530,6 @@ export class Visual implements IVisual {
                 this.eventService.renderingFinished(options);
                 return;
             }
-            this.altGroup.style("display", "none");
-            this.gaugeGroup.style("display", null);
-
-            // ── Responsive layout ───────────────────────────────────────
-            const padding = 12;
-            const textSpace = 52; // room for value + label text below the arc centre
-            const isSemicircle = gaugeType === "semicircle";
-
-            // For a semicircle the arc occupies half the circle height.
-            // For three-quarter / arc gauges the bottom extends further.
-            // Reserve buffer when zone callouts sit outside the outer edge so they don't clip
-            const labelPosEarly = String(zonesCfg.zoneLabelPosition.value?.value || "band");
-            const calloutFontSizeEarly = zonesCfg.zoneLabelFontSize.value > 0
-                ? zonesCfg.zoneLabelFontSize.value
-                : 12;
-            const outerLabelBuffer = (zonesCfg.showZoneLabels.value && labelPosEarly === "outerEdge")
-                ? Math.max(18, calloutFontSizeEarly + 8)
-                : 0;
-
-            const verticalFactor = isSemicircle ? 2.0 : 1.35;
-            const maxRadiusFromHeight = ((height - padding * 2 - textSpace - titleHeight - outerLabelBuffer) * verticalFactor) / 2;
-            const maxRadiusFromWidth  = (width - padding * 2 - outerLabelBuffer * 2) / 2;
-            const radius = Math.max(24, Math.min(maxRadiusFromWidth, maxRadiusFromHeight));
-
-            const innerRadius = Math.max(0, radius - thickness);
-            const outerRadius = radius;
-
-            // Centre the gauge group (offset down by title height when title is shown)
-            const cx = width / 2;
-            const cy = isSemicircle
-                ? padding + titleHeight + radius
-                : padding + titleHeight + radius + thickness * 0.5;
-
-            this.gaugeGroup.attr("transform", `translate(${cx},${cy})`);
-
-            // ── Angle scale ─────────────────────────────────────────────
-            const angleScale = scaleLinear()
-                .domain([minVal, maxVal])
-                .range([startAngle, endAngle])
-                .clamp(true);
-
-            const arcGen = d3arc();
-
-            // ── Border arc ───────────────────────────────────────────────
-            if (gaugeCfg.showBorder.value) {
-                const bw = Math.max(1, gaugeCfg.borderWidth.value);
-                const bColor = this.isHighContrast ? this.hcForeground : gaugeCfg.borderColor.value.value;
-                this.borderPath
-                    .attr("d", arcGen({
-                        innerRadius: innerRadius,
-                        outerRadius: outerRadius,
-                        startAngle: startAngle,
-                        endAngle: endAngle
-                    }))
-                    .attr("fill", "none")
-                    .attr("stroke", bColor)
-                    .attr("stroke-width", bw)
-                    .attr("opacity", 1)
-                    .style("display", null);
-            } else {
-                this.borderPath.style("display", "none");
-            }
-
-            // ── High contrast overrides for zone colors ──────────────────
-            const z1Color = this.isHighContrast ? this.hcForeground : zonesCfg.zone1Color.value.value;
-            const z2Color = this.isHighContrast ? this.hcForeground : zonesCfg.zone2Color.value.value;
-            const z3Color = this.isHighContrast
-                ? this.hcForeground
-                : (this.zone3ColorHelper?.getColorForMeasure(dataView.metadata?.objects, "value")
-                    ?? zonesCfg.zone3Color.value.value);
-
-            // ── Gradient defs (rebuilt each render to honour colour changes) ──
-            this.defs.selectAll("*").remove();
-            const useGradient = !!zonesCfg.useGradient.value && !this.isHighContrast;
-            if (useGradient) {
-                this.buildZoneGradient("zone1-grad", z1Color);
-                this.buildZoneGradient("zone2-grad", z2Color);
-                this.buildZoneGradient("zone3-grad", z3Color);
-            }
-
-            // ── Zone background arcs ────────────────────────────────────
-            const z1Fill = useGradient ? "url(#zone1-grad)" : z1Color;
-            const z2Fill = useGradient ? "url(#zone2-grad)" : z2Color;
-            const z3Fill = useGradient ? "url(#zone3-grad)" : z3Color;
-            const baseZoneOpacity = this.isHighContrast ? 0.5 : (useGradient ? 0.85 : 0.3);
-
-            // v2 board look (01-18 Task 4, audit-board polish) — "active
-            // zone lights, others dim": the zone the current value falls
-            // in renders at a lit-up opacity; the other two dim well below
-            // the pre-existing flat 0.3/0.85. High contrast keeps the
-            // pre-existing flat 0.5 for all three (opacity-only dimming
-            // under HC would still read as colour-adjacent state, so the
-            // HC path stays untouched — same convention as every other
-            // colour-only affordance in this suite).
-            // Board v2 values (.zarc 0.32 / .zarc.active 1) — the yeet
-            // decision retires the old 0.55/0.12 & gradient-tuned pairs.
-            const LIT_OPACITY = this.isHighContrast ? baseZoneOpacity : 1.0;
-            const DIM_OPACITY = this.isHighContrast ? baseZoneOpacity : 0.32;
-            const zone1Opacity = currentVal <= zone1End ? LIT_OPACITY : DIM_OPACITY;
-            const zone2Opacity = (currentVal > zone1End && currentVal <= zone2End) ? LIT_OPACITY : DIM_OPACITY;
-            const zone3Opacity = currentVal > zone2End ? LIT_OPACITY : DIM_OPACITY;
-
-            // ── Zones: board v2 face (GAUGE-02 remix) ──────────────────
-            // Hard cutover to the Codex Zone Gauge board look (Decision
-            // 2026-07-17): round-cap stroked arcs (.zarc) for the Solid
-            // treatment, LED blocks for Segmented (the default, composite
-            // reference top-left tile). Lit zone glows on dark canvases;
-            // the other zones dim to the board's 0.32.
-            const rMid = (innerRadius + outerRadius) / 2;
-            const strokeArcD = (r: number, a0: number, a1: number): string => {
-                const px = (a: number) => `${(r * Math.sin(a)).toFixed(2)} ${(-r * Math.cos(a)).toFixed(2)}`;
-                const lg = Math.abs(a1 - a0) > Math.PI ? 1 : 0;
-                return `M ${px(a0)} A ${r} ${r} 0 ${lg} 1 ${px(a1)}`;
-            };
-            const treatment = String(this.formattingSettings.gaugeStyleCard.zoneTreatment.value.value || "segmented");
-            const glowOK = !this.isHighContrast && theme === "dark";
-            const zoneSpecs = [
-                { path: this.zone1Path, a0: startAngle, a1: angleScale(zone1End), fill: z1Fill, color: z1Color, opacity: zone1Opacity, lit: zone1Opacity === LIT_OPACITY },
-                { path: this.zone2Path, a0: angleScale(zone1End), a1: angleScale(zone2End), fill: z2Fill, color: z2Color, opacity: zone2Opacity, lit: zone2Opacity === LIT_OPACITY },
-                { path: this.zone3Path, a0: angleScale(zone2End), a1: endAngle, fill: z3Fill, color: z3Color, opacity: zone3Opacity, lit: zone3Opacity === LIT_OPACITY },
-            ];
-            this.zoneSegGroup.selectAll("*").remove();
-            if (treatment === "solid") {
-                this.zoneSegGroup.style("display", "none");
-                for (const z of zoneSpecs) {
-                    if (z.a1 <= z.a0) { z.path.style("display", "none"); continue; }
-                    z.path
-                        .attr("d", strokeArcD(rMid, z.a0, z.a1))
-                        .attr("fill", "none")
-                        .attr("stroke", z.fill)
-                        .attr("stroke-width", thickness)
-                        .attr("stroke-linecap", "round")
-                        .attr("opacity", z.opacity)
-                        .style("filter", glowOK && z.lit ? `drop-shadow(0 0 ${Math.max(4, thickness * 0.4)}px ${z.color})` : null)
-                        .style("display", null);
-                }
-            } else {
-                for (const z of zoneSpecs) z.path.style("display", "none");
-                this.zoneSegGroup.style("display", null);
-                const pitch = Math.max(0.06, (thickness * 1.55) / rMid);
-                const duty = 0.68;
-                for (const z of zoneSpecs) {
-                    const span = z.a1 - z.a0;
-                    if (span <= 0) continue;
-                    const n = Math.max(1, Math.round(span / pitch));
-                    const p = span / n;
-                    for (let i = 0; i < n; i++) {
-                        const b0 = z.a0 + i * p + p * (1 - duty) / 2;
-                        const b1 = z.a0 + i * p + p * (1 + duty) / 2;
-                        this.zoneSegGroup.append("path")
-                            .attr("d", strokeArcD(rMid, b0, b1))
-                            .attr("fill", "none")
-                            .attr("stroke", z.fill)
-                            .attr("stroke-width", thickness)
-                            .attr("stroke-linecap", "butt")
-                            .attr("opacity", z.opacity)
-                            .style("filter", glowOK && z.lit ? `drop-shadow(0 0 ${Math.max(3, thickness * 0.3)}px ${z.color})` : null);
-                    }
-                }
-            }
-            // Scale endpoint labels (board .gend) at the arc ends
-            const endLabelClr = this.isHighContrast ? this.hcForeground : (theme === "dark" ? "#8f8ab8" : "#6a6a82");
-            const endLabelR = rMid + thickness * 0.5 + 12;
-            for (const [angle, txt] of [[startAngle, minVal], [endAngle, maxVal]] as [number, number][]) {
-                this.zoneSegGroup.append("text")
-                    .attr("x", endLabelR * Math.sin(angle))
-                    .attr("y", -endLabelR * Math.cos(angle) + 4)
-                    .attr("text-anchor", "middle")
-                    .attr("fill", endLabelClr)
-                    .style("font-family", "Segoe UI, sans-serif")
-                    .style("font-size", "12px")
-                    .style("font-weight", "600")
-                    .text(String(Math.round(txt * 10) / 10));
-            }
-            if (treatment === "solid") this.zoneSegGroup.style("display", null); // endpoint labels live here for both treatments; solid re-shows the (now label-only) group
-
-            // ── Value colour (matches whichever zone the needle is in) ──
-            let valueColor: string;
-            if (currentVal <= zone1End) {
-                valueColor = z1Color;
-            } else if (currentVal <= zone2End) {
-                valueColor = z2Color;
-            } else {
-                valueColor = z3Color;
-            }
-
-            // ── Value indicator (arc, needle, or both) ─────────────────
-            const valueStyle = (valueCfg.valueStyle.value?.value as string) || "arc";
-            const valueInner = innerRadius + 2;
-            const valueOuter = outerRadius - 2;
-            const valueEndAngle = angleScale(currentVal);
-
-            // GAUGE-03 Value Arc options ride on top of the existing
-            // valueStyle idiom: Hidden suppresses the arc, Thin band swaps
-            // the tinted ring for a slim outer stroke, and the opacity
-            // slider modulates either.
-            const vaCfgR = this.formattingSettings.valueArcCard;
-            const vaStyleR = String(vaCfgR.arcStyle.value.value || "overlay");
-            const vaAlphaR = Math.max(0, Math.min(1, (vaCfgR.opacity.value ?? 100) / 100));
-            const showArc = (valueStyle === "arc" || valueStyle === "both") && vaStyleR !== "hidden";
-            const showNeedle = valueStyle === "needle" || valueStyle === "both";
-
-            // Value arc — translucent overlay so zone colours stay primary.
-            // Zones show through tinted by the value colour where the value reaches.
-            const VALUE_ARC_OPACITY = 0.25 * vaAlphaR;
-            if (showArc && vaStyleR === "band") {
-                // Thin band: slim stroke just outside the zone track (no
-                // ring tween — the band snaps to the value).
-                this.valuePath
-                    .attr("d", strokeArcD(outerRadius + 3, startAngle, valueEndAngle))
-                    .attr("fill", "none")
-                    .attr("stroke", valueColor)
-                    .attr("stroke-width", 4)
-                    .attr("stroke-linecap", "round")
-                    .attr("opacity", vaAlphaR)
-                    .style("display", null);
-            } else if (showArc) {
-                // Tinted overlay (the pre-existing ring) — ensure any prior
-                // band-mode stroke attrs are cleared before the fill render.
-                this.valuePath.attr("stroke", null).attr("stroke-width", null);
-                if (animDuration > 0) {
-                    const prevAngle = this.previousValueAngle ?? startAngle;
-                    (this.valuePath as any)
-                        .attr("fill", valueColor)
-                        .attr("opacity", VALUE_ARC_OPACITY)
-                        .style("display", null)
-                        .transition()
-                        .duration(animDuration)
-                        .attrTween("d", () => {
-                            const interp = interpolate(prevAngle, valueEndAngle);
-                            return (t: number) => {
-                                return arcGen({
-                                    innerRadius: valueInner,
-                                    outerRadius: valueOuter,
-                                    startAngle: startAngle,
-                                    endAngle: interp(t)
-                                }) || "";
-                            };
-                        });
-                } else {
-                    this.valuePath
-                        .attr("d", arcGen({
-                            innerRadius: valueInner,
-                            outerRadius: valueOuter,
-                            startAngle: startAngle,
-                            endAngle: valueEndAngle
-                        }))
-                        .attr("fill", valueColor)
-                        .attr("opacity", VALUE_ARC_OPACITY)
-                        .style("display", null);
-                }
-            } else {
-                this.valuePath.style("display", "none");
-            }
-            this.previousValueAngle = valueEndAngle;
-
-            // Value needle (tachometer style from centre, with eased rotation)
-            if (showNeedle) {
-                // v2 board look (01-18 Task 4, audit-board polish) — "black
-                // needle on light canvas / band-tinted [zone colour] on
-                // dark": extends the EXISTING empty-string "auto" sentinel
-                // (Needle Color's own pre-existing default/idiom — "leave
-                // default to match zone color") with a theme branch, rather
-                // than inventing a new property. An explicit Needle Color
-                // override still resolves untouched (D-16).
-                const customNeedleColor = valueCfg.needleColor.value.value;
-                // Board v2 needle: brand cyan + glow on dark (.needle
-                // fill #00d9ff), ink on light (.ltcol .needle #14141f).
-                // Explicit Needle Color override still wins (D-16).
-                const autoNeedleColor = theme === "light" ? "#14141f" : "#00d9ff";
-                const nColor = this.isHighContrast ? this.hcForeground
-                    : (customNeedleColor && customNeedleColor.length > 0 ? customNeedleColor : autoNeedleColor);
-                const needleGlow = (!this.isHighContrast && theme === "dark") ? `drop-shadow(0 0 5px ${nColor})` : null;
-                const needleLen = outerRadius + 4;
-                const needleWidth = Math.max(3, thickness * 0.15);
-                const hubRadius = Math.max(5, thickness * 0.3);
-
-                const buildNeedlePath = (a: number): string => {
-                    const tipX = needleLen * Math.sin(a);
-                    const tipY = -needleLen * Math.cos(a);
-                    const perp = a + Math.PI / 2;
-                    const bx1 = needleWidth * Math.sin(perp);
-                    const by1 = -needleWidth * Math.cos(perp);
-                    const bx2 = -needleWidth * Math.sin(perp);
-                    const by2 = needleWidth * Math.cos(perp);
-                    return `M ${bx1} ${by1} L ${tipX} ${tipY} L ${bx2} ${by2} Z`;
-                };
-
-                if (animDuration > 0) {
-                    const prev = this.previousValueAngle ?? startAngle;
-                    (this.targetNeedle as any)
-                        .attr("fill", nColor)
-                        .style("filter", needleGlow)
-                        .style("display", null)
-                        .transition()
-                        .duration(animDuration)
-                        .attrTween("d", () => {
-                            const interp = interpolate(prev, valueEndAngle);
-                            return (t: number) => buildNeedlePath(interp(t));
-                        });
-                } else {
-                    this.targetNeedle
-                        .attr("d", buildNeedlePath(valueEndAngle))
-                        .attr("fill", nColor)
-                        .style("filter", needleGlow)
-                        .style("display", null);
-                }
-
-                this.needleHub
-                    .attr("cx", 0).attr("cy", 0)
-                    .attr("r", hubRadius)
-                    .attr("fill", nColor)
-                    .style("filter", needleGlow)
-                    .style("display", null);
-                // Board hub inner dot (.hubi): dark canvas ink / white
-                this.needleHubInner
-                    .attr("cx", 0).attr("cy", 0)
-                    .attr("r", Math.max(2, hubRadius * 0.45))
-                    .attr("fill", this.isHighContrast ? this.hcBackground : (theme === "dark" ? "#0d0d24" : "#ffffff"))
-                    .style("display", null);
-            } else {
-                this.targetNeedle.style("display", "none");
-                this.needleHub.style("display", "none");
-                this.needleHubInner.style("display", "none");
-            }
-
-            // ── Target marker ───────────────────────────────────────────
-            const showTarget = targetCfg.showTarget.value
-                && parsed.target !== null
-                && (targetCfg.targetStyle.value.value as string) !== "none";
-
-            if (showTarget) {
-                const targetAngle = angleScale(clamp(parsed.target!, minVal, maxVal));
-                const tColor = this.isHighContrast ? this.hcForeground : targetCfg.targetColor.value.value;
-                const tStyle = targetCfg.targetStyle.value.value as string;
-
-                this.targetLine.style("display", "none");
-                this.targetMarker.style("display", "none");
-
-                if (tStyle === "line") {
-                    const x1 = (innerRadius - 4) * Math.sin(targetAngle);
-                    const y1 = -(innerRadius - 4) * Math.cos(targetAngle);
-                    const x2 = (outerRadius + 4) * Math.sin(targetAngle);
-                    const y2 = -(outerRadius + 4) * Math.cos(targetAngle);
-
-                    this.targetLine
-                        .attr("x1", x1).attr("y1", y1)
-                        .attr("x2", x2).attr("y2", y2)
-                        .attr("stroke", tColor)
-                        .attr("stroke-width", 2.5)
-                        .style("display", null);
-                } else if (tStyle === "marker") {
-                    const mx = (outerRadius + 3) * Math.sin(targetAngle);
-                    const my = -(outerRadius + 3) * Math.cos(targetAngle);
-
-                    this.targetMarker
-                        .attr("cx", mx).attr("cy", my)
-                        .attr("r", 5)
-                        .attr("fill", tColor)
-                        .style("display", null);
-                }
-            } else {
-                this.targetLine.style("display", "none");
-                this.targetMarker.style("display", "none");
-            }
-
-            // ── Comparison marker (e.g. previous period) ────────────────
-            const showComparison = compCfg.showComparison.value && parsed.comparison !== null;
-            if (showComparison) {
-                const compAngle = angleScale(clamp(parsed.comparison!, minVal, maxVal));
-                const cColor = this.isHighContrast ? this.hcForeground : compCfg.comparisonColor.value.value;
-                const cStyle = compCfg.comparisonStyle.value.value as string;
-
-                if (cStyle === "line") {
-                    const x1 = (innerRadius - 4) * Math.sin(compAngle);
-                    const y1 = -(innerRadius - 4) * Math.cos(compAngle);
-                    const x2 = (outerRadius + 4) * Math.sin(compAngle);
-                    const y2 = -(outerRadius + 4) * Math.cos(compAngle);
-
-                    this.compLine
-                        .attr("x1", x1).attr("y1", y1)
-                        .attr("x2", x2).attr("y2", y2)
-                        .attr("stroke", cColor)
-                        .attr("stroke-width", 2)
-                        .attr("stroke-dasharray", "3 2")
-                        .attr("opacity", 0.85)
-                        .style("display", null);
-                    this.compMarker.style("display", "none");
-                } else {
-                    const mx = (outerRadius + 6) * Math.sin(compAngle);
-                    const my = -(outerRadius + 6) * Math.cos(compAngle);
-
-                    this.compMarker
-                        .attr("cx", mx).attr("cy", my)
-                        .attr("r", 4.5)
-                        .attr("fill", "#ffffff")
-                        .attr("stroke", cColor)
-                        .attr("stroke-width", 2.5)
-                        .style("display", null);
-                    this.compLine.style("display", "none");
-                }
-            } else {
-                this.compLine.style("display", "none");
-                this.compMarker.style("display", "none");
-            }
-
-            // ── Zone callout labels ─────────────────────────────────────
-            // Three placement modes:
-            //   • "band"       — labels sit on the arc band itself, contrast text colour. Hidden if band < 14px.
-            //   • "outerEdge"  — labels sit just outside the outer edge in zone colour. Layout reserves buffer above.
-            //   • "innerEdge"  — labels sit just inside the inner edge (donut hole) in zone colour.
-            // All modes rotate text along the arc tangent so labels follow the curve.
-            if (zonesCfg.showZoneLabels.value) {
-                const bandWidth = outerRadius - innerRadius;
-                const labelPos = String(zonesCfg.zoneLabelPosition.value?.value || "band");
-                const minBandForLabel = 14;
-                const calloutFontSize = zonesCfg.zoneLabelFontSize.value > 0
-                    ? zonesCfg.zoneLabelFontSize.value
-                    : (labelPos === "band"
-                        ? Math.max(8, Math.min(bandWidth * 0.45, 12))
-                        : Math.max(9, Math.min(radius * 0.085, 13)));
-
-                let labelR: number;
-                if (labelPos === "band") {
-                    labelR = (innerRadius + outerRadius) / 2;
-                } else if (labelPos === "outerEdge") {
-                    labelR = outerRadius + Math.max(10, calloutFontSize * 0.85);
-                } else {
-                    // innerEdge — sit just inside the inner radius (in the donut hole)
-                    labelR = Math.max(20, innerRadius - Math.max(8, calloutFontSize * 0.75));
-                }
-
-                const placeCallout = (sel: Selection<SVGTextElement, unknown, null, undefined>,
-                                      text: string, sa: number, ea: number, zoneColor: string) => {
-                    if (!text) { sel.style("display", "none"); return; }
-                    if (labelPos === "band" && bandWidth < minBandForLabel) {
-                        sel.style("display", "none");
-                        return;
-                    }
-                    if (labelPos === "innerEdge" && innerRadius < 28) {
-                        // Donut hole too small — would overlap value text
-                        sel.style("display", "none");
-                        return;
-                    }
-                    const mid = (sa + ea) / 2;
-                    const x = labelR * Math.sin(mid);
-                    const y = -labelR * Math.cos(mid);
-
-                    // Rotate text to follow the arc tangent.
-                    let rotDeg = (mid * 180) / Math.PI;
-                    if (Math.cos(mid) < 0) rotDeg += 180;
-
-                    // band: contrast against fill. outerEdge / innerEdge: zone colour on transparent.
-                    const textColor = labelPos === "band"
-                        ? this.contrastTextColor(zoneColor)
-                        : zoneColor;
-
-                    sel
-                        .attr("x", 0).attr("y", 0)
-                        .attr("transform", `translate(${x},${y}) rotate(${rotDeg})`)
-                        .attr("text-anchor", "middle")
-                        .attr("dominant-baseline", "middle")
-                        .style("font-size", calloutFontSize + "px")
-                        .style("font-weight", labelPos === "band" ? "700" : "600")
-                        .style("letter-spacing", "0.5px")
-                        .style("text-transform", "uppercase")
-                        .style("fill", this.isHighContrast ? this.hcForeground : textColor)
-                        .style("opacity", labelPos === "band" ? 1 : 0.95)
-                        .style("pointer-events", "none")
-                        .text(text)
-                        .style("display", null);
-                };
-                placeCallout(this.zone1Label, zonesCfg.zone1Label.value || "",
-                    startAngle, angleScale(zone1End), z1Color);
-                placeCallout(this.zone2Label, zonesCfg.zone2Label.value || "",
-                    angleScale(zone1End), angleScale(zone2End), z2Color);
-                placeCallout(this.zone3Label, zonesCfg.zone3Label.value || "",
-                    angleScale(zone2End), endAngle, z3Color);
-            } else {
-                this.zone1Label.style("display", "none");
-                this.zone2Label.style("display", "none");
-                this.zone3Label.style("display", "none");
-            }
-
-            // ── Value text ──────────────────────────────────────────────
-            // "Value always on top" (01-18 Task 4, audit-board polish) is
-            // already true by construction: this.valueText is appended in
-            // the constructor AFTER the needle/hub/target/comparison/zone-
-            // label elements (SVG paints later-appended siblings on top),
-            // so no DOM-reorder was needed here — verified via the
-            // constructor's append order, not re-derived per render.
-            const autoValueFontSize = Math.max(12, Math.min(radius * 0.35, 48));
-            const valueFontSize = valueCfg.valueFontSize.value > 0
-                ? valueCfg.valueFontSize.value
-                : autoValueFontSize;
-            const textYBase = isSemicircle ? 8 : radius * 0.15 + 8;
-
-            // ColorHelper.getColorForMeasure (TEXT-02 fx) already resolves
-            // "a bound rule's colour, else the static Value Color swatch"
-            // (the swatch was passed in as its default-colour constructor
-            // arg above). What it can't know is this visual's own "leave
-            // empty to match zone colour" idiom — so an empty result still
-            // falls through to the data-driven zone colour, exactly as
-            // before this plan (D-06).
-            const resolvedValueColor = this.valueColorHelper?.getColorForMeasure(dataView?.metadata?.objects, "value") ?? "";
-            const effectiveValueColor = this.isHighContrast ? this.hcForeground
-                : (resolvedValueColor && resolvedValueColor.length > 0 ? resolvedValueColor : valueColor);
-
-            // Text treatment (TEXT-01) — `?? default` reproduces the
-            // pre-existing hardcoded font-weight:700 exactly when an old
-            // saved report has none of these new properties set (D-06):
-            // valueBold defaults true.
-            const valueFontFamily = valueCfg.valueFontFamily.value || "Segoe UI, sans-serif";
-            const valueWeight = valueCfg.valueBold.value ? "700" : "400";
-            const valueTextStyle = valueCfg.valueItalic.value ? "italic" : "normal";
-            const valueDecoration = valueCfg.valueUnderline.value ? "underline" : "none";
-
-            if (valueCfg.showValue.value) {
-                const format = valueCfg.valueFormat.value.value as string;
-                const decimals = valueCfg.decimalPlaces.value;
-                const fmt = (n: number) => format === "percent"
-                    ? n.toFixed(decimals) + "%"
-                    : n.toFixed(decimals);
-
-                this.valueText
-                    .attr("x", 0)
-                    .attr("y", textYBase)
-                    .attr("text-anchor", "middle")
-                    .attr("dominant-baseline", "hanging")
-                    .style("font-size", valueFontSize + "px")
-                    .style("font-family", valueFontFamily)
-                    .style("font-weight", valueWeight)
-                    .style("font-style", valueTextStyle)
-                    .style("text-decoration", valueDecoration)
-                    .style("fill", effectiveValueColor)
-                    // Board .gv glow: value radiates its own colour on dark
-                    .style("filter", (!this.isHighContrast && theme === "dark") ? `drop-shadow(0 0 8px ${effectiveValueColor})` : null)
-                    .style("display", null);
-
-                // Counter animation: tween from previous value to current
-                if (animDuration > 0) {
-                    const prev = this.previousValue ?? currentVal;
-                    (this.valueText as any)
-                        .transition()
-                        .duration(animDuration)
-                        .tween("text", () => {
-                            const interp = interpolate(prev, currentVal);
-                            return (t: number) => {
-                                this.valueText.text(fmt(interp(t)));
-                            };
-                        });
-                } else {
-                    this.valueText.text(fmt(currentVal));
-                }
-            } else {
-                this.valueText.style("display", "none");
-            }
-            this.previousValue = currentVal;
-
-            // ── Zone label ──────────────────────────────────────────────
-            if (valueCfg.showLabel.value) {
-                let zoneLabel: string;
-                if (currentVal <= zone1End) {
-                    zoneLabel = this.localizationManager.getDisplayName("Visual_Zone_Poor");
-                } else if (currentVal <= zone2End) {
-                    zoneLabel = this.localizationManager.getDisplayName("Visual_Zone_Acceptable");
-                } else {
-                    zoneLabel = this.localizationManager.getDisplayName("Visual_Zone_Good");
-                }
-
-                const autoLabelFontSize = Math.max(10, Math.min(radius * 0.16, 20));
-                const labelFontSize = valueCfg.labelFontSize.value > 0
-                    ? valueCfg.labelFontSize.value
-                    : autoLabelFontSize;
-                const labelY = textYBase + valueFontSize + 4;
-
-                const customLabelColor = valueCfg.labelColor.value.value;
-                const effectiveLabelColor = this.isHighContrast ? this.hcForeground
-                    : (customLabelColor && customLabelColor.length > 0 ? customLabelColor : valueColor);
-
-                // Text treatment (TEXT-01) — `?? default` reproduces the
-                // pre-existing hardcoded font-weight:500 as closely as a
-                // boolean toggle allows (labelBold defaults false -> 400,
-                // the closest match; D-06).
-                const labelFontFamily = valueCfg.labelFontFamily.value || "Segoe UI, sans-serif";
-                const labelWeight = valueCfg.labelBold.value ? "700" : "400";
-                const labelStyle = valueCfg.labelItalic.value ? "italic" : "normal";
-                const labelDecoration = valueCfg.labelUnderline.value ? "underline" : "none";
-
-                this.labelText
-                    .attr("x", 0)
-                    .attr("y", labelY)
-                    .attr("text-anchor", "middle")
-                    .attr("dominant-baseline", "hanging")
-                    .style("font-size", labelFontSize + "px")
-                    .style("font-family", labelFontFamily)
-                    .style("font-weight", labelWeight)
-                    .style("font-style", labelStyle)
-                    .style("text-decoration", labelDecoration)
-                    .style("fill", effectiveLabelColor)
-                    .text(zoneLabel)
-                    .style("display", null);
-            } else {
-                this.labelText.style("display", "none");
-            }
-
-            // Build tooltip data for current state
-            const format = valueCfg.valueFormat.value.value as string;
-            const decimals = valueCfg.decimalPlaces.value;
-            const tooltipVal = format === "percent"
-                ? currentVal.toFixed(decimals) + "%"
-                : currentVal.toFixed(decimals);
-
-            let zoneName: string;
-            if (currentVal <= zone1End) {
-                zoneName = "Poor";
-            } else if (currentVal <= zone2End) {
-                zoneName = "Acceptable";
-            } else {
-                zoneName = "Good";
-            }
-
-            this.currentTooltipItems = [];
-            if (parsed.categoryLabel) {
-                this.currentTooltipItems.push({ displayName: "Category", value: parsed.categoryLabel });
-            }
-            this.currentTooltipItems.push(
-                { displayName: "Value", value: tooltipVal },
-                { displayName: "Zone", value: zoneName }
-            );
-            if (parsed.target !== null) {
-                const targetStr = format === "percent"
-                    ? parsed.target.toFixed(decimals) + "%"
-                    : parsed.target.toFixed(decimals);
-                this.currentTooltipItems.push({ displayName: "Target", value: targetStr });
-            }
-            if (parsed.comparison !== null) {
-                const compStr = format === "percent"
-                    ? parsed.comparison.toFixed(decimals) + "%"
-                    : parsed.comparison.toFixed(decimals);
-                const compLabel = compCfg.comparisonLabel.value || "Comparison";
-                this.currentTooltipItems.push({ displayName: compLabel, value: compStr });
-            }
-
-            this.eventService.renderingFinished(options);
         } catch (e) {
             this.eventService.renderingFailed(options, String(e));
         }

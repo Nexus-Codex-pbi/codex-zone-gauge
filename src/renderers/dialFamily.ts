@@ -7,7 +7,7 @@ import {
     GaugeRenderCtx, galleryTokens, dialTicks, arcPath, faceArcPath,
     needlePoints, needleTransform, polar, clearGroup, fitTransform,
     fraction, dangerSpan, stateVsTarget, ensureGradients,
-    domeFill, hubFill, needleFill, SEGOE, TNUM, DialCfg,
+    domeFill, hubFill, needleFill, applyFont, TNUM, DialCfg, SEGOE,
 } from "./helpers";
 
 interface DialSpec {
@@ -91,7 +91,7 @@ function renderDial(ctx: GaugeRenderCtx, spec: DialSpec, redSpan: { f0: number; 
         const aT = a0 - span * fraction(ctx, ctx.target);
         const to = polar(cx, cy, spec.cfg.rOut + 6, aT), ti = polar(cx, cy, spec.cfg.rMajIn - 4, aT);
         g.append("line").attr("x1", to.x).attr("y1", to.y).attr("x2", ti.x).attr("y2", ti.y)
-            .attr("stroke", hc ? fg : t.tgtc).attr("stroke-width", 3).attr("stroke-linecap", "round");
+            .attr("stroke", hc ? fg : (ctx.targetColor || t.tgtc)).attr("stroke-width", 3).attr("stroke-linecap", "round");
     }
 
     // Value Arc (GAUGE-03) — sweep from scale start to the value
@@ -118,19 +118,19 @@ function renderDial(ctx: GaugeRenderCtx, spec: DialSpec, redSpan: { f0: number; 
     if (!hc) g.append("circle").attr("cx", cx - 3).attr("cy", cy - 3).attr("r", 3).attr("fill", "rgba(255,255,255,0.6)");
     g.append("circle").attr("cx", cx).attr("cy", cy).attr("r", 3).attr("fill", hc ? bg : t.hubi);
 
-    // Value + unit
+    // Value + unit — pane colour/font overrides win; board look is the auto
     if (ctx.showValue) {
-        g.append("text").attr("x", cx).attr("y", spec.valueY).attr("text-anchor", "middle")
-            .attr("fill", hc ? fg : (needleClr ?? t.val))
-            .style("font-family", SEGOE).style("font-size", `${spec.valueSize}px`)
-            .style("font-weight", "700").style("font-feature-settings", TNUM)
+        const vt = g.append("text").attr("x", cx).attr("y", spec.valueY).attr("text-anchor", "middle")
+            .attr("fill", hc ? fg : (ctx.valueColor || needleClr || t.val))
+            .style("font-feature-settings", TNUM)
             .text(ctx.valueText);
-        if (ctx.unitText) {
-            g.append("text").attr("x", cx).attr("y", spec.unitY).attr("text-anchor", "middle")
-                .attr("fill", hc ? fg : t.unit)
-                .style("font-family", SEGOE).style("font-size", "12px")
-                .style("font-weight", "600").style("letter-spacing", "0.08em")
+        applyFont(vt, ctx.valueFont, spec.valueSize, "700");
+        if (ctx.unitText && ctx.showUnit) {
+            const ut = g.append("text").attr("x", cx).attr("y", spec.unitY).attr("text-anchor", "middle")
+                .attr("fill", hc ? fg : (ctx.unitColor || t.unit))
+                .style("letter-spacing", "0.08em")
                 .text(ctx.unitText);
+            applyFont(ut, ctx.unitFont, 12, "600");
         }
     }
 }
