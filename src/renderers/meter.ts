@@ -10,7 +10,7 @@ import {
     fraction, applyFont, TNUM, SEGOE,
 } from "./helpers";
 
-const N = 18, A0 = 190, SPAN = 200, CX = 125, CY = 130, R = 94;
+const A0 = 190, SPAN = 200, CX = 125, CY = 130, R = 94;
 
 export function renderSegmentedMeter(ctx: GaugeRenderCtx): void {
     const t = galleryTokens(ctx.theme);
@@ -18,6 +18,8 @@ export function renderSegmentedMeter(ctx: GaugeRenderCtx): void {
         .attr("transform", fitTransform(ctx, 250, 190));
     const hc = ctx.hc, fg = ctx.hcFg;
     const sf = fraction(ctx, ctx.value);
+    // LED count from the pane (board default 18)
+    const N = Math.max(4, Math.min(60, Math.round(ctx.segments || 18)));
 
     for (let i = 0; i < N; i++) {
         const aS = A0 - SPAN * ((i + 0.14) / N), aE = A0 - SPAN * ((i + 0.86) / N);

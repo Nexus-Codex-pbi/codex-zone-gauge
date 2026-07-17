@@ -453,6 +453,9 @@ export class Visual implements IVisual {
             }
             const isArcStyle = ["pressureDial", "speedometer", "tachometer", "progressRing"].indexOf(styleKey) >= 0;
             this.formattingSettings.valueArcCard.visible = isArcStyle;
+            // Per-style options surface only where they apply
+            this.formattingSettings.gaugeStyleCard.segments.visible = styleKey === "segmentedMeter";
+            this.formattingSettings.gaugeStyleCard.dialFace.visible = styleKey === "speedometer" || styleKey === "tachometer";
 
             {
                 this.gaugeGroup.style("display", "none");
@@ -511,6 +514,8 @@ export class Visual implements IVisual {
                         style: String(vaCfg.arcStyle.value.value || "overlay") as "overlay" | "band" | "hidden",
                         opacity: vaCfg.opacity.value ?? 100,
                     },
+                    segments: this.formattingSettings.gaugeStyleCard.segments.value ?? 18,
+                    dialFace: String(this.formattingSettings.gaugeStyleCard.dialFace.value?.value || "auto"),
                 };
                 switch (styleKey) {
                     case "pressureDial": renderPressureDial(ctx); break;

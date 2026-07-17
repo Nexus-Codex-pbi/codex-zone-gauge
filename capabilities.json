@@ -689,6 +689,39 @@
                             }
                         ]
                     }
+                },
+                "segments": {
+                    "displayName": "Segments",
+                    "type": {
+                        "numeric": true
+                    }
+                },
+                "dialFace": {
+                    "displayName": "Dial face",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "displayName": "Auto (dome)",
+                                "value": "auto"
+                            },
+                            {
+                                "displayName": "Slate",
+                                "value": "slate"
+                            },
+                            {
+                                "displayName": "Deep navy",
+                                "value": "deepNavy"
+                            },
+                            {
+                                "displayName": "Ink",
+                                "value": "ink"
+                            },
+                            {
+                                "displayName": "None",
+                                "value": "none"
+                            }
+                        ]
+                    }
                 }
             }
         },

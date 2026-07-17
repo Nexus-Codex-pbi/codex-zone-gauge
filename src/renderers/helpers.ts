@@ -60,6 +60,8 @@ export interface GaugeRenderCtx {
     unitFont: FontOpts;
     zones: GaugeZone[];
     valueArc: ValueArcConfig;
+    segments: number;            // Segmented Meter LED count (pane, default 18)
+    dialFace: string;            // speedo/tach face: auto|slate|deepNavy|ink|none
 }
 
 /* ─── Board token maps ──────────────────────────────────────────────────────

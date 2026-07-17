@@ -44,9 +44,16 @@ function renderDial(ctx: GaugeRenderCtx, spec: DialSpec, redSpan: { f0: number; 
     // a0 - span, NOT a further -30 (transcription bug caught in Neil's
     // live QA — the dome spilled 30° past the top value).
     if (spec.face) {
+        // Dial face style (pane; board faceMap port): Auto = dome gradient,
+        // flat colours otherwise, None keeps only the outline ring.
+        const FACE_MAP: Record<string, string> = { slate: "#1b1b3a", deepNavy: "#07223a", ink: "#04040e", none: "transparent" };
+        const faceFill = hc ? bg
+            : (ctx.dialFace && ctx.dialFace !== "auto")
+                ? (FACE_MAP[ctx.dialFace] ?? domeFill(ctx.theme))
+                : domeFill(ctx.theme);
         g.append("path")
             .attr("d", faceArcPath(cx, cy, 112, a0, a0 - span))
-            .attr("fill", hc ? bg : domeFill(ctx.theme))
+            .attr("fill", faceFill)
             .attr("stroke", hc ? fg : t.dfbd).attr("stroke-width", 1);
         if (!hc) {
             g.append("path")

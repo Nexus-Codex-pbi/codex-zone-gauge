@@ -396,8 +396,32 @@ export class GaugeStyleSettings extends FormattingSettingsCard {
         ],
         value: { displayName: "Pressure Dial", value: "pressureDial" },
     });
+    // Per-style options (Neil live-QA 2026-07-17) — visibility flipped in
+    // visual.ts once the active style is known.
+    segments = new formattingSettings.NumUpDown({
+        name: "segments",
+        displayName: "Segments",
+        description: "Number of LED blocks (Segmented Meter)",
+        value: 18,
+        options: {
+            minValue: { type: powerbi.visuals.ValidatorType.Min, value: 4 },
+            maxValue: { type: powerbi.visuals.ValidatorType.Max, value: 60 }
+        }
+    });
+    dialFace = new formattingSettings.ItemDropdown({
+        name: "dialFace",
+        displayName: "Dial face",
+        items: [
+            { displayName: "Auto (dome)", value: "auto" },
+            { displayName: "Slate", value: "slate" },
+            { displayName: "Deep navy", value: "deepNavy" },
+            { displayName: "Ink", value: "ink" },
+            { displayName: "None", value: "none" },
+        ],
+        value: { displayName: "Auto (dome)", value: "auto" },
+    });
 
-    slices: FormattingSettingsSlice[] = [this.style];
+    slices: FormattingSettingsSlice[] = [this.style, this.segments, this.dialFace];
 }
 
 // ─── Value Arc (GAUGE-03, absorbs kanban #29) ─────────────────────────────
