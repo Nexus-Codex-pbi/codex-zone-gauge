@@ -175,10 +175,16 @@ export function clearGroup(g: SVGGElement): Selection<SVGGElement, unknown, null
     return sel;
 }
 
-/** Fit a design-space viewBox into the tile below the title, preserving aspect. */
+/** Fit a design-space viewBox into the tile below the title, preserving
+ * aspect — WITH breathing room (Neil live-QA 2026-07-17: edge-to-edge scale
+ * read as "too zoomed in" and collided with the corner-accent brackets).
+ * Margin ≈7% of the smaller tile side, floor 12px. */
 export function fitTransform(ctx: GaugeRenderCtx, designW: number, designH: number): string {
     const availH = Math.max(10, ctx.height - ctx.titleHeight);
-    const s = Math.min(ctx.width / designW, availH / designH);
+    const m = Math.max(12, Math.min(ctx.width, availH) * 0.07);
+    const iw = Math.max(10, ctx.width - 2 * m);
+    const ih = Math.max(10, availH - 2 * m);
+    const s = Math.min(iw / designW, ih / designH);
     const tx = (ctx.width - designW * s) / 2;
     const ty = ctx.titleHeight + (availH - designH * s) / 2;
     return `translate(${tx.toFixed(2)},${ty.toFixed(2)}) scale(${s.toFixed(4)})`;

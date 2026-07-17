@@ -39,10 +39,13 @@ function renderDial(ctx: GaugeRenderCtx, spec: DialSpec, redSpan: { f0: number; 
     const { cx, cy, a0, span } = spec;
     const hc = ctx.hc, fg = ctx.hcFg, bg = ctx.hcBg;
 
-    // Face plate (speedo/tach) — dome gradient, spec arc highlight
+    // Face plate (speedo/tach) — dome gradient, spec arc highlight.
+    // Wedge ends exactly at the scale end: the board's fa(...,210,-30) IS
+    // a0 - span, NOT a further -30 (transcription bug caught in Neil's
+    // live QA — the dome spilled 30° past the top value).
     if (spec.face) {
         g.append("path")
-            .attr("d", faceArcPath(cx, cy, 112, a0, a0 - span - 30))
+            .attr("d", faceArcPath(cx, cy, 112, a0, a0 - span))
             .attr("fill", hc ? bg : domeFill(ctx.theme))
             .attr("stroke", hc ? fg : t.dfbd).attr("stroke-width", 1);
         if (!hc) {
