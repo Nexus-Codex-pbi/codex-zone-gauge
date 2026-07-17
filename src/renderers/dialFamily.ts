@@ -6,7 +6,7 @@
 import {
     GaugeRenderCtx, galleryTokens, dialTicks, arcPath, faceArcPath,
     needlePoints, needleTransform, polar, clearGroup, fitTransform,
-    fraction, dangerFrom, stateVsTarget, ensureGradients,
+    fraction, dangerSpan, stateVsTarget, ensureGradients,
     domeFill, hubFill, needleFill, SEGOE, TNUM, DialCfg,
 } from "./helpers";
 
@@ -31,7 +31,7 @@ function labelsFor(ctx: GaugeRenderCtx, count: number): string[] {
     return out;
 }
 
-function renderDial(ctx: GaugeRenderCtx, spec: DialSpec, redFrom: number | null, stateClr: string | null): void {
+function renderDial(ctx: GaugeRenderCtx, spec: DialSpec, redSpan: { f0: number; f1: number; color: string } | null, stateClr: string | null): void {
     ensureGradients(ctx.defs);
     const t = galleryTokens(ctx.theme);
     const g = clearGroup(ctx.group).append("g")
@@ -53,17 +53,19 @@ function renderDial(ctx: GaugeRenderCtx, spec: DialSpec, redFrom: number | null,
         }
     }
 
-    // Red band (pressure dial / tachometer)
-    if (spec.bandR != null && redFrom != null) {
+    // Red band (pressure dial / tachometer) — spans the ACTUAL danger
+    // zone in its configured colour (see dangerSpan note in helpers).
+    if (spec.bandR != null && redSpan != null && redSpan.f1 > redSpan.f0) {
+        const bandClr = hc ? fg : (redSpan.color || t.danger);
         g.append("path")
-            .attr("d", arcPath(cx, cy, spec.bandR, a0 - span * redFrom, a0 - span))
-            .attr("fill", "none").attr("stroke", hc ? fg : t.danger)
+            .attr("d", arcPath(cx, cy, spec.bandR, a0 - span * redSpan.f0, a0 - span * redSpan.f1))
+            .attr("fill", "none").attr("stroke", bandClr)
             .attr("stroke-width", 7).attr("stroke-linecap", "round")
-            .style("filter", (!hc && ctx.theme === "dark") ? `drop-shadow(0 0 6px ${t.danger})` : null);
+            .style("filter", (!hc && ctx.theme === "dark") ? `drop-shadow(0 0 6px ${bandClr})` : null);
     }
 
     // Ticks + numbers
-    const cfg: DialCfg = { ...spec.cfg, labels: labelsFor(ctx, spec.cfg.majCount), redFrom: redFrom ?? undefined };
+    const cfg: DialCfg = { ...spec.cfg, labels: labelsFor(ctx, spec.cfg.majCount), redFrom: redSpan?.f0, redTo: redSpan?.f1 };
     const ticks = dialTicks(cx, cy, a0, span, cfg);
     for (const m of ticks.min) {
         g.append("line").attr("x1", m.x1).attr("y1", m.y1).attr("x2", m.x2).attr("y2", m.y2)
@@ -136,7 +138,7 @@ export function renderPressureDial(ctx: GaugeRenderCtx): void {
         designW: 240, designH: 214, cx: 120, cy: 118, a0: 225, span: 270,
         cfg: { rOut: 98, rMajIn: 84, rMinIn: 90, rNum: 70, majCount: 11, minorPer: 1, labels: [] },
         face: false, needleLen: 86, bandR: 101, valueY: 168, unitY: 186, valueSize: 30,
-    }, dangerFrom(ctx), null);
+    }, dangerSpan(ctx), null);
 }
 
 /** Speedometer — 240° dome face; needle + readout recolour vs target. (board g2) */
@@ -157,5 +159,5 @@ export function renderTachometer(ctx: GaugeRenderCtx): void {
         designW: 250, designH: 200, cx: 125, cy: 122, a0: 210, span: 240,
         cfg: { rOut: 104, rMajIn: 88, rMinIn: 95, rNum: 74, majCount: 9, minorPer: 1, labels: [] },
         face: true, needleLen: 92, bandR: 107, valueY: 164, unitY: 182, valueSize: 30,
-    }, dangerFrom(ctx), null);
+    }, dangerSpan(ctx), null);
 }

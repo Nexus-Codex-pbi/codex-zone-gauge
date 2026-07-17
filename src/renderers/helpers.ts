@@ -108,7 +108,7 @@ export function needleTransform(cx: number, cy: number, aDeg: number): string {
 export interface DialCfg {
     rOut: number; rMajIn: number; rMinIn: number; rNum: number;
     majCount: number; minorPer?: number;
-    labels: string[]; redFrom?: number;
+    labels: string[]; redFrom?: number; redTo?: number;
 }
 export interface DialTicks {
     maj: { x1: number; y1: number; x2: number; y2: number; red: boolean }[];
@@ -122,7 +122,7 @@ export function dialTicks(cx: number, cy: number, a0: number, span: number, cfg:
     const mc = cfg.majCount, mp = cfg.minorPer || 0;
     for (let i = 0; i < mc; i++) {
         const f = i / (mc - 1), a = a0 - span * f;
-        const red = cfg.redFrom != null && f >= cfg.redFrom - 1e-6;
+        const red = cfg.redFrom != null && f >= cfg.redFrom - 1e-6 && f <= (cfg.redTo ?? 1) + 1e-6;
         const o = polar(cx, cy, cfg.rOut, a), ip = polar(cx, cy, cfg.rMajIn, a), np = polar(cx, cy, cfg.rNum, a);
         maj.push({ x1: o.x, y1: o.y, x2: ip.x, y2: ip.y, red });
         nums.push({ x: np.x, y: np.y, label: cfg.labels[i], red });
@@ -190,11 +190,19 @@ export function fraction(ctx: GaugeRenderCtx, v: number): number {
     return Math.min(1, Math.max(0, (v - ctx.min) / span));
 }
 
-/** First danger-zone start as a fraction of the domain (redline/red-band). */
-export function dangerFrom(ctx: GaugeRenderCtx): number | null {
-    const dz = ctx.zones.filter(z => z.band === "danger");
+/** Danger-zone SPAN as domain fractions + its configured colour. The board
+ * drew its red band from redFrom→end because its instruments put danger at
+ * the top of scale; this visual's zone model is ascending (zone 1 = Poor at
+ * the BOTTOM), so the band must follow the actual zone extent — caught live
+ * on the sample dataset 2026-07-17, where from→end painted the whole dial. */
+export function dangerSpan(ctx: GaugeRenderCtx): { f0: number; f1: number; color: string } | null {
+    const dz = ctx.zones.filter(z => z.band === "danger" && z.to > z.from);
     if (!dz.length) return null;
-    return fraction(ctx, Math.min(...dz.map(z => z.from)));
+    return {
+        f0: fraction(ctx, Math.min(...dz.map(z => z.from))),
+        f1: fraction(ctx, Math.max(...dz.map(z => z.to))),
+        color: dz[0].color,
+    };
 }
 
 /** State vs target, per the board speedometer rule. */
