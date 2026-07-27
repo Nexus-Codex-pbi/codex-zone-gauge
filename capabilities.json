@@ -559,6 +559,12 @@
             "bool": true
           },
           "displayName": "Label Underline"
+        },
+        "matchNeedleColor": {
+          "type": {
+            "bool": true
+          },
+          "displayName": "Match Needle Colour"
         }
       },
       "displayName": "Value Display"

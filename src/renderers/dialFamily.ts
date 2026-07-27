@@ -6,7 +6,7 @@
 import {
     GaugeRenderCtx, galleryTokens, dialTicks, arcPath, faceArcPath,
     needlePoints, needleTransform, polar, clearGroup, fitTransform,
-    fraction, dangerSpans, zoneSpans, stateVsTarget, ensureGradients,
+    fraction, dangerSpans, zoneSpans, activeZoneColor, stateVsTarget, ensureGradients,
     domeFill, hubFill, needleFill, applyFont, TNUM, DialCfg, SEGOE,
 } from "./helpers";
 
@@ -137,22 +137,31 @@ function renderDial(ctx: GaugeRenderCtx, spec: DialSpec, redSpan: { f0: number; 
     }
 
     // Needle + hub
-    // A pane-picked Needle Colour wins over the state colour; unset falls back
-    // to stateVsTarget() and then the board token, as before.
-    const needleClr = ctx.needleColor ?? stateClr ?? null;
+    // Needle + readout follow the ZONE THE VALUE IS IN (Neil 2026-07-27: "the
+    // needle and value normally match the zone value") — a cyan needle sitting
+    // inside a red band reads as two contradictory signals. Precedence: an
+    // explicit pane Needle Colour still wins, then the active zone's colour,
+    // then the per-style state colour, then the board token.
+    const zoneClr = activeZoneColor(ctx);
+    const needleClr = ctx.needleColor ?? zoneClr ?? stateClr ?? null;
     g.append("polygon")
         .attr("points", needlePoints(cx, cy, spec.needleLen, 6))
         .attr("transform", needleTransform(cx, cy, a0 - span * vFrac))
         .attr("fill", hc ? fg : (needleClr ?? needleFill(faceThemeKey)))
         .attr("stroke", hc ? bg : null).attr("stroke-width", hc ? 2 : null);
-    g.append("circle").attr("cx", cx).attr("cy", cy).attr("r", 9).attr("fill", hc ? fg : hubFill(faceThemeKey));
+    // Hub follows the NEEDLE (Neil 2026-07-27) — a fixed cyan gradient hub under
+    // a zone-coloured needle read as a separate signal. Falls back to the board
+    // hub gradient only when the needle has no resolved colour of its own.
+    g.append("circle").attr("cx", cx).attr("cy", cy).attr("r", 9)
+        .attr("fill", hc ? fg : (needleClr ?? hubFill(faceThemeKey)));
     if (!hc) g.append("circle").attr("cx", cx - 3).attr("cy", cy - 3).attr("r", 3).attr("fill", "rgba(255,255,255,0.6)");
-    g.append("circle").attr("cx", cx).attr("cy", cy).attr("r", 3).attr("fill", hc ? bg : ft.hubi);
+    g.append("circle").attr("cx", cx).attr("cy", cy).attr("r", 3)
+        .attr("fill", hc ? bg : (needleClr ? "#000000" : ft.hubi));
 
     // Value + unit — pane colour/font overrides win; board look is the auto
     if (ctx.showValue) {
         const vt = g.append("text").attr("x", cx).attr("y", spec.valueY).attr("text-anchor", "middle")
-            .attr("fill", hc ? fg : (ctx.valueColor || needleClr || ft.val))
+            .attr("fill", hc ? fg : (ctx.valueColor || (ctx.matchNeedleColor ? needleClr : null) || ft.val))
             .style("font-feature-settings", TNUM)
             .text(ctx.valueText);
         applyFont(vt, ctx.valueFont, spec.valueSize, "700");

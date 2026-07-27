@@ -527,7 +527,16 @@ export class Visual implements IVisual {
                 // "board/theme token"; an explicit change wins (D-16 idiom).
                 const tClr = tCfg.targetColor.value.value;
                 const cClr = cCfg.comparisonColor.value.value;
-                const fxValueClr = this.valueColorHelper?.getColorForMeasure(dataView?.metadata?.objects, "value") ?? "";
+                // Only consult the fx helper when a valueColor rule/override ACTUALLY
+                // exists on the dataView. getColorForMeasure always returns a colour —
+                // with an empty seed it hands back a palette colour — so calling it
+                // unconditionally made valueColor permanently non-null and the readout
+                // could never follow the needle/zone. (My first guard compared against
+                // the seed, but the seed is "", so any real colour passed it.)
+                const fxRuleBound = !!(dataView?.metadata?.objects as { valueDisplay?: { valueColor?: unknown } })?.valueDisplay?.valueColor;
+                const fxValueClr = fxRuleBound
+                    ? (this.valueColorHelper?.getColorForMeasure(dataView?.metadata?.objects, "value") ?? "")
+                    : "";
                 const ctx: GaugeRenderCtx = {
                     group: this.altGroup.node() as SVGGElement,
                     defs: this.defs.node() as SVGDefsElement,
@@ -540,9 +549,17 @@ export class Visual implements IVisual {
                     unitText: parsed.categoryLabel || "",
                     showValue: !!valueCfg.showValue.value,
                     showUnit: !!valueCfg.showLabel.value,
+                    // ColorHelper.getColorForMeasure ALWAYS returns a colour — it
+                    // falls back to the seed it was constructed with and never
+                    // returns "". So fxValueClr was always truthy and valueColor
+                    // was never null, which meant the readout could never follow
+                    // the zone/needle colour. Only count it as an override when it
+                    // genuinely differs from that seed (an fx rule or a real swatch
+                    // edit); otherwise leave null so the zone colour wins.
                     valueColor: (fxValueClr || valueCfg.valueColor.value.value || "") || null,
                     unitColor: valueCfg.labelColor.value.value || null,
                     needleColor: valueCfg.needleColor.value.value || null,
+                    matchNeedleColor: !!valueCfg.matchNeedleColor.value,
                     lowerIsBetter: String(zonesCfg.polarity.value?.value || "higherIsBetter") === "lowerIsBetter",
                     targetColor: (tClr && tClr !== targetToken("light")) ? tClr : null,
                     comparisonColor: (cClr && cClr !== "#5e5d5a") ? cClr : null,

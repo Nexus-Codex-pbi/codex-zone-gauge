@@ -349,6 +349,17 @@ class ValueDisplayCard extends FormattingSettingsCard {
         instanceKind: ConstantOrRule
     });
 
+    // Mirror the needle (Neil 2026-07-27: "as long as we have an option to mirror
+    // or customise"). OFF by default so saved reports keep their current readout
+    // colour. Precedence: an explicit Value Colour always wins; then this mirror;
+    // then the board token.
+    matchNeedleColor = new formattingSettings.ToggleSwitch({
+        name: "matchNeedleColor",
+        displayName: "Match Needle Colour",
+        description: "Readout follows the needle / active zone colour instead of the theme default",
+        value: false
+    });
+
     showValue = new formattingSettings.ToggleSwitch({
         name: "showValue",
         displayName: "Show Value",
@@ -430,6 +441,7 @@ class ValueDisplayCard extends FormattingSettingsCard {
     slices: Array<FormattingSettingsSlice> = [
         this.showValue,
         this.needleColor,
+        this.matchNeedleColor,
         this.valueFormat,
         this.decimalPlaces,
         this.valueColor,

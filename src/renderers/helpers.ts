@@ -61,6 +61,7 @@ export interface GaugeRenderCtx {
     // consulted it — a user-picked needle silently did nothing. null = auto
     // (state colour / board token), a set value wins.
     needleColor: string | null;
+    matchNeedleColor: boolean;
     // Thresholds polarity. Target-relative banding is symmetric and ignores it.
     lowerIsBetter: boolean;
     targetColor: string | null;
@@ -263,6 +264,15 @@ export function zoneSpans(ctx: GaugeRenderCtx): Array<{ f0: number; f1: number; 
         .filter(s => s.f1 > s.f0);
 }
 
+/** The zone the CURRENT VALUE sits in, and its configured colour. The dial's
+ *  needle and readout should agree with the band the value is standing in —
+ *  a cyan needle inside a red zone tells the reader two different things. */
+export function activeZoneColor(ctx: GaugeRenderCtx): string | null {
+    const z = ctx.zones.find(z => ctx.value >= z.from && ctx.value <= z.to)
+        ?? ctx.zones[ctx.zones.length - 1];
+    return z && z.color ? z.color : null;
+}
+
 /** State vs target, per the board speedometer rule. */
 export function stateVsTarget(value: number, target: number | null, lowerIsBetter = false): "succ" | "warn" | "dang" | null {
     if (target == null) return null;
@@ -280,7 +290,11 @@ export const TNUM = '"tnum"';
 
 /** Apply a pane FontControl bundle to a text selection, falling back to the
  * board's own size/weight when untouched (weightFor idiom). */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// `sel` is a d3 Selection of varying element type; the suite's eslint config
+// loads only eslint-plugin-powerbi-visuals, so @typescript-eslint rules are not
+// registered and the old disable-comment for no-explicit-any named a rule that
+// does not exist — which made ESLint ERROR on every package run. Removed: an
+// erroring lint run is not a clean certification audit.
 export function applyFont(sel: any, f: FontOpts, boardPx: number, fallbackWeight: string): void {
     sel.style("font-family", f.family || SEGOE)
         .style("font-size", `${(f.size && f.size > 0) ? f.size : boardPx}px`)
