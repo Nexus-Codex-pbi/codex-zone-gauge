@@ -468,7 +468,17 @@ export class Visual implements IVisual {
                 const hcC = this.isHighContrast;
                 const dangerClr  = hcC ? this.hcForeground : zonesCfg.zone1Color.value.value;
                 const warningClr = hcC ? this.hcForeground : zonesCfg.zone2Color.value.value;
-                const successClr = hcC ? this.hcForeground : zonesCfg.zone3Color.value.value;
+                // Zone 3 is the fx-enabled colour (instanceKind ConstantOrRule +
+                // a dataViewWildcard selector, TRANS-04), so Desktop persists swatch
+                // edits THROUGH that selector — the card-level slice value does not
+                // reflect them. zone3ColorHelper was built for exactly this and was
+                // then never referenced anywhere, so reading the raw slice meant a
+                // user's Zone 3 Colour pick had no effect at all. Resolve through the
+                // helper; its seed IS the slice value, so an unset picker still yields
+                // the authored default.
+                const successClr = hcC ? this.hcForeground
+                    : (this.zone3ColorHelper?.getColorForMeasure(dataView?.metadata?.objects, "zone3")
+                       || zonesCfg.zone3Color.value.value);
 
                 // ── Band model ──────────────────────────────────────────────
                 // "thresholds" (default, unchanged): ascending cuts up the
