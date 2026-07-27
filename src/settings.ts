@@ -104,6 +104,25 @@ class ZonesCard extends FormattingSettingsCard {
         value: { displayName: "Thresholds", value: "thresholds" },
     });
 
+    // POLARITY (2026-07-27). The threshold model has an IMPLICIT
+    // higher-is-better assumption baked in — zone 1 is danger at the BOTTOM of
+    // the scale — so a lower-is-better measure (error rate, cost per unit,
+    // latency) rendered backwards, red where it should be green. Flipping
+    // inverts both the semantic band AND the colour, so the low end genuinely
+    // goes green; inverting the band alone would change meaning without
+    // changing what the user sees. Does not apply to target-relative banding,
+    // which is symmetric by definition.
+    polarity = new formattingSettings.ItemDropdown({
+        name: "polarity",
+        displayName: "Direction",
+        description: "Which end of the scale is good. Thresholds only — target-relative banding is symmetric.",
+        items: [
+            { displayName: "Higher is better", value: "higherIsBetter" },
+            { displayName: "Lower is better", value: "lowerIsBetter" },
+        ],
+        value: { displayName: "Higher is better", value: "higherIsBetter" },
+    });
+
     onTargetTolerance = new formattingSettings.NumUpDown({
         name: "onTargetTolerance",
         displayName: "On-target ±%",
@@ -214,6 +233,7 @@ class ZonesCard extends FormattingSettingsCard {
     // instruments consume thresholds + colours only.
     slices: Array<FormattingSettingsSlice> = [
         this.bandingMode,
+        this.polarity,
         this.onTargetTolerance,
         this.warningTolerance,
         this.zone1End,

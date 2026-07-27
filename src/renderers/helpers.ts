@@ -61,6 +61,8 @@ export interface GaugeRenderCtx {
     // consulted it — a user-picked needle silently did nothing. null = auto
     // (state colour / board token), a set value wins.
     needleColor: string | null;
+    // Thresholds polarity. Target-relative banding is symmetric and ignores it.
+    lowerIsBetter: boolean;
     targetColor: string | null;
     comparisonColor: string | null;
     valueFont: FontOpts;
@@ -262,8 +264,14 @@ export function zoneSpans(ctx: GaugeRenderCtx): Array<{ f0: number; f1: number; 
 }
 
 /** State vs target, per the board speedometer rule. */
-export function stateVsTarget(value: number, target: number | null): "succ" | "warn" | "dang" | null {
+export function stateVsTarget(value: number, target: number | null, lowerIsBetter = false): "succ" | "warn" | "dang" | null {
     if (target == null) return null;
+    // The needle's state carried the same higher-is-better assumption as the
+    // zone model, so a lower-is-better measure got a red needle while sitting
+    // in a green band. Mirror the comparison instead of duplicating the ladder.
+    if (lowerIsBetter) {
+        return value <= target ? "succ" : value <= 1.1 * target ? "warn" : "dang";
+    }
     return value >= target ? "succ" : value >= 0.9 * target ? "warn" : "dang";
 }
 

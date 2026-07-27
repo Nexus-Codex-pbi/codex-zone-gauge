@@ -204,6 +204,21 @@
           },
           "displayName": "Banding"
         },
+        "polarity": {
+          "type": {
+            "enumeration": [
+              {
+                "value": "higherIsBetter",
+                "displayName": "Higher is better"
+              },
+              {
+                "value": "lowerIsBetter",
+                "displayName": "Lower is better"
+              }
+            ]
+          },
+          "displayName": "Direction"
+        },
         "onTargetTolerance": {
           "type": {
             "numeric": true

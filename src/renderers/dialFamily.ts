@@ -170,15 +170,20 @@ function renderDial(ctx: GaugeRenderCtx, spec: DialSpec, redSpan: { f0: number; 
 export function renderPressureDial(ctx: GaugeRenderCtx): void {
     renderDial(ctx, {
         designW: 240, designH: 214, cx: 120, cy: 118, a0: 225, span: 270,
-        cfg: { rOut: 98, rMajIn: 84, rMinIn: 90, rNum: 70, majCount: 11, minorPer: 1, labels: [] },
-        face: false, needleLen: 86, bandR: 101, valueY: 168, unitY: 186, valueSize: 30,
+        // rNum pulled 70 -> 60: on a 270° sweep the first and last labels (0 and
+        // 100) land at the dial's open bottom lip, and at r70 they sat level with
+        // the arc ends and the value readout, reading as spilling OUT of the bowl
+        // rather than sitting in it. r60 tucks both ends inside the band.
+        // valueY nudged down so the readout clears that same bottom label pair.
+        cfg: { rOut: 98, rMajIn: 84, rMinIn: 90, rNum: 60, majCount: 11, minorPer: 1, labels: [] },
+        face: false, needleLen: 86, bandR: 101, valueY: 176, unitY: 194, valueSize: 30,
     }, null, null);
 }
 
 /** Speedometer — 240° dome face; needle + readout recolour vs target. (board g2) */
 export function renderSpeedometer(ctx: GaugeRenderCtx): void {
     const t = galleryTokens(ctx.theme);
-    const st = stateVsTarget(ctx.value, ctx.target);
+    const st = stateVsTarget(ctx.value, ctx.target, ctx.lowerIsBetter);
     const clr = st === "succ" ? t.sg : st === "warn" ? t.sa : st === "dang" ? t.sm : null;
     renderDial(ctx, {
         designW: 250, designH: 200, cx: 125, cy: 122, a0: 210, span: 240,

@@ -503,10 +503,21 @@ export class Visual implements IVisual {
                     ];
                     zones = trBands.filter(z => z.to > z.from);
                 } else {
+                    // POLARITY: thresholds bake in higher-is-better (zone 1 =
+                    // danger at the bottom). "Lower is better" swaps the two
+                    // outer bands AND their colours together, so an error-rate
+                    // or cost measure shows green at the low end instead of
+                    // rendering its meaning backwards. The boundaries the user
+                    // authored are untouched — only which end is good flips.
+                    const lowGood = String(zonesCfg.polarity.value?.value || "higherIsBetter") === "lowerIsBetter";
                     zones = [
-                        { from: minVal, to: zone1End, band: "danger", color: dangerClr },
+                        { from: minVal, to: zone1End,
+                          band: lowGood ? "success" : "danger",
+                          color: lowGood ? successClr : dangerClr },
                         { from: zone1End, to: zone2End, band: "warning", color: warningClr },
-                        { from: zone2End, to: maxVal, band: "success", color: successClr },
+                        { from: zone2End, to: maxVal,
+                          band: lowGood ? "danger" : "success",
+                          color: lowGood ? dangerClr : successClr },
                     ];
                 }
                 const vaCfg = this.formattingSettings.valueArcCard;
@@ -532,6 +543,7 @@ export class Visual implements IVisual {
                     valueColor: (fxValueClr || valueCfg.valueColor.value.value || "") || null,
                     unitColor: valueCfg.labelColor.value.value || null,
                     needleColor: valueCfg.needleColor.value.value || null,
+                    lowerIsBetter: String(zonesCfg.polarity.value?.value || "higherIsBetter") === "lowerIsBetter",
                     targetColor: (tClr && tClr !== targetToken("light")) ? tClr : null,
                     comparisonColor: (cClr && cClr !== "#5e5d5a") ? cClr : null,
                     valueFont: {
