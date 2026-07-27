@@ -26,21 +26,46 @@ export function renderProgressRing(ctx: GaugeRenderCtx): void {
         .attr("fill", "none").attr("stroke", hc ? "none" : t.track).attr("stroke-width", 15);
 
     const alpha = Math.max(0, Math.min(1, ctx.valueArc.opacity / 100));
-    if (pf > 0 && ctx.valueArc.style !== "hidden") {
+    // Value Arc "Hidden" is meaningful for the DIAL styles, where the value arc
+    // is a tint OVERLAY sitting on top of an already-readable zone band. On the
+    // progress ring the arc IS the data — honouring "hidden" leaves nothing but
+    // an empty track and no reading at all, which is never a useful state and
+    // reads as a broken visual. A report that carries arcStyle:"hidden" (the
+    // Zone Gauge sample .pbix does) therefore rendered a blank ring.
+    // "hidden" falls back to the FULL-WIDTH gradient ring (the listing look),
+    // not the thin band — a report that never chose a ring width should get the
+    // hero treatment, and "band" stays the explicit opt-in for the thin one.
+    const thinBand = ctx.valueArc.style === "band";
+
+    // ZONE COLOUR drives the ring (v1 behaviour, dropped in the remix). The
+    // pickers stayed in the pane but nothing read them here, so a report that
+    // set Zone 1/2/3 Colour saw no change on the ring at all. Resolve the zone
+    // the value sits in and use its colour, honouring the D-16 sentinel rule:
+    // a colour still at its declared default means "auto", so the board token
+    // wins; anything else is an explicit authorial choice and beats the token.
+    const ZONE_SENTINELS = ["#e60e22", "#d4920a", "#007064"];
+    const activeZone = ctx.zones.find(z => ctx.value >= z.from && ctx.value <= z.to)
+        ?? ctx.zones[ctx.zones.length - 1];
+    const zoneClr = activeZone
+        && activeZone.color
+        && ZONE_SENTINELS.indexOf(String(activeZone.color).toLowerCase()) < 0
+        ? activeZone.color : null;
+    const arcStroke = hc ? fg : (ctx.valueArc.ringColor ?? zoneClr ?? (thinBand ? t.prog : progFill(ctx.theme)));
+    if (pf > 0) {
         g.append("path")
             .attr("d", arcPath(cx, cy, r, 90, 90 - 360 * Math.min(pf, 0.99999)))
             .attr("fill", "none")
-            .attr("stroke", hc ? fg : (ctx.valueArc.style === "band" ? t.prog : progFill(ctx.theme)))
-            .attr("stroke-width", ctx.valueArc.style === "band" ? 6 : 15)
+            .attr("stroke", arcStroke)
+            .attr("stroke-width", thinBand ? 6 : 15)
             .attr("stroke-linecap", "round")
             .attr("opacity", alpha)
             .style("filter", (!hc && t.glow) ? `drop-shadow(0 0 8px ${t.prog})` : null);
     }
-    if (pf > 1 && ctx.valueArc.style !== "hidden") {
+    if (pf > 1) {
         g.append("path")
             .attr("d", arcPath(cx, cy, r, 90, 90 - 360 * Math.min(pf - 1, 1)))
             .attr("fill", "none").attr("stroke", hc ? fg : t.over)
-            .attr("stroke-width", ctx.valueArc.style === "band" ? 6 : 15)
+            .attr("stroke-width", thinBand ? 6 : 15)
             .attr("stroke-linecap", "round")
             .attr("opacity", alpha)
             .style("filter", !hc ? `drop-shadow(0 0 8px ${t.over})` : null);

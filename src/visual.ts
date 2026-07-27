@@ -466,11 +466,49 @@ export class Visual implements IVisual {
                 const fmtV = (n: number) => vfmt === "percent" ? n.toFixed(vdec) + "%" : n.toFixed(vdec);
 
                 const hcC = this.isHighContrast;
-                const zones: GaugeZone[] = [
-                    { from: minVal, to: zone1End, band: "danger", color: hcC ? this.hcForeground : zonesCfg.zone1Color.value.value },
-                    { from: zone1End, to: zone2End, band: "warning", color: hcC ? this.hcForeground : zonesCfg.zone2Color.value.value },
-                    { from: zone2End, to: maxVal, band: "success", color: hcC ? this.hcForeground : zonesCfg.zone3Color.value.value },
-                ];
+                const dangerClr  = hcC ? this.hcForeground : zonesCfg.zone1Color.value.value;
+                const warningClr = hcC ? this.hcForeground : zonesCfg.zone2Color.value.value;
+                const successClr = hcC ? this.hcForeground : zonesCfg.zone3Color.value.value;
+
+                // ── Band model ──────────────────────────────────────────────
+                // "thresholds" (default, unchanged): ascending cuts up the
+                // scale, higher-is-better. "targetRelative": tolerance bands
+                // measured FROM the target, so a value is judged by how far off
+                // target it is in EITHER direction. The target-relative model
+                // emits FIVE bands (danger/warning/success/warning/danger) —
+                // renderers resolve zones by lookup, not by index, so the extra
+                // entries need no renderer change. dangerSpans() handles the two
+                // disjoint danger runs.
+                const bandingMode = String(zonesCfg.bandingMode.value?.value || "thresholds");
+                const targetVal = parsed.target;
+                let zones: GaugeZone[];
+                if (bandingMode === "targetRelative" && targetVal != null && isFinite(targetVal)) {
+                    // Tolerances are % OF TARGET, so the bands scale with the
+                    // measure instead of being pinned to the axis.
+                    const innerPct = Math.max(0, Number(zonesCfg.onTargetTolerance.value) || 0) / 100;
+                    const outerRaw = Math.max(0, Number(zonesCfg.warningTolerance.value) || 0) / 100;
+                    // Warning must sit OUTSIDE on-target; if mis-set, collapse the
+                    // amber band rather than invert it.
+                    const outerPct = Math.max(innerPct, outerRaw);
+                    const mag = Math.abs(targetVal) || 1;
+                    const lo2 = targetVal - outerPct * mag, lo1 = targetVal - innerPct * mag;
+                    const hi1 = targetVal + innerPct * mag, hi2 = targetVal + outerPct * mag;
+                    const clamp = (n: number) => Math.min(maxVal, Math.max(minVal, n));
+                    const trBands: GaugeZone[] = [
+                        { from: minVal,      to: clamp(lo2), band: "danger",  color: dangerClr  },
+                        { from: clamp(lo2),  to: clamp(lo1), band: "warning", color: warningClr },
+                        { from: clamp(lo1),  to: clamp(hi1), band: "success", color: successClr },
+                        { from: clamp(hi1),  to: clamp(hi2), band: "warning", color: warningClr },
+                        { from: clamp(hi2),  to: maxVal,     band: "danger",  color: dangerClr  },
+                    ];
+                    zones = trBands.filter(z => z.to > z.from);
+                } else {
+                    zones = [
+                        { from: minVal, to: zone1End, band: "danger", color: dangerClr },
+                        { from: zone1End, to: zone2End, band: "warning", color: warningClr },
+                        { from: zone2End, to: maxVal, band: "success", color: successClr },
+                    ];
+                }
                 const vaCfg = this.formattingSettings.valueArcCard;
                 const tCfg = this.formattingSettings.targetSettingsCard;
                 const cCfg = this.formattingSettings.comparisonSettingsCard;
@@ -493,6 +531,7 @@ export class Visual implements IVisual {
                     showUnit: !!valueCfg.showLabel.value,
                     valueColor: (fxValueClr || valueCfg.valueColor.value.value || "") || null,
                     unitColor: valueCfg.labelColor.value.value || null,
+                    needleColor: valueCfg.needleColor.value.value || null,
                     targetColor: (tClr && tClr !== targetToken("light")) ? tClr : null,
                     comparisonColor: (cClr && cClr !== "#5e5d5a") ? cClr : null,
                     valueFont: {
@@ -513,6 +552,7 @@ export class Visual implements IVisual {
                     valueArc: {
                         style: String(vaCfg.arcStyle.value.value || "overlay") as "overlay" | "band" | "hidden",
                         opacity: vaCfg.opacity.value ?? 100,
+                        ringColor: vaCfg.ringColor.value.value || null,
                     },
                     segments: this.formattingSettings.gaugeStyleCard.segments.value ?? 18,
                     dialFace: String(this.formattingSettings.gaugeStyleCard.dialFace.value?.value || "auto"),

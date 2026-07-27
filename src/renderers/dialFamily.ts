@@ -6,7 +6,7 @@
 import {
     GaugeRenderCtx, galleryTokens, dialTicks, arcPath, faceArcPath,
     needlePoints, needleTransform, polar, clearGroup, fitTransform,
-    fraction, dangerSpan, stateVsTarget, ensureGradients,
+    fraction, dangerSpans, zoneSpans, stateVsTarget, ensureGradients,
     domeFill, hubFill, needleFill, applyFont, TNUM, DialCfg, SEGOE,
 } from "./helpers";
 
@@ -49,10 +49,16 @@ function renderDial(ctx: GaugeRenderCtx, spec: DialSpec, redSpan: { f0: number; 
     // band, target tick, value arc, needle, hub) adapts to the face like
     // text adapts to the Background card (Neil live-QA 2026-07-17: light-
     // canvas tokens washed out on slate/navy/ink faces).
-    const FACE_MAP: Record<string, string> = { slate: "#1b1b3a", deepNavy: "#07223a", ink: "#04040e", none: "transparent" };
+    // Light Grey is the first LIGHT flat face (Neil 2026-07-27) — a pale dial on
+    // a dark canvas reads well, but only if everything sitting ON it flips with
+    // it. The dark-face path already does exactly this in reverse, so a light
+    // face is its mirror: adopt the LIGHT token set so ticks, numbers, needle
+    // and value render dark-on-light instead of washing out to invisible.
+    const FACE_MAP: Record<string, string> = { slate: "#1b1b3a", deepNavy: "#07223a", ink: "#04040e", lightGrey: "#dfe3ee", none: "transparent" };
     const faceIsDarkFlat = spec.face && !hc && ["slate", "deepNavy", "ink"].indexOf(ctx.dialFace) >= 0;
-    const ft = faceIsDarkFlat ? galleryTokens("dark") : t;
-    const faceThemeKey = faceIsDarkFlat ? "dark" as const : ctx.theme;
+    const faceIsLightFlat = spec.face && !hc && ["lightGrey"].indexOf(ctx.dialFace) >= 0;
+    const ft = faceIsDarkFlat ? galleryTokens("dark") : faceIsLightFlat ? galleryTokens("light") : t;
+    const faceThemeKey = faceIsDarkFlat ? "dark" as const : faceIsLightFlat ? "light" as const : ctx.theme;
     if (spec.face) {
         const faceFill = hc ? bg
             : (ctx.dialFace && ctx.dialFace !== "auto")
@@ -72,17 +78,26 @@ function renderDial(ctx: GaugeRenderCtx, spec: DialSpec, redSpan: { f0: number; 
 
     // Red band (pressure dial / tachometer) — spans the ACTUAL danger
     // zone in its configured colour (see dangerSpan note in helpers).
-    if (spec.bandR != null && redSpan != null && redSpan.f1 > redSpan.f0) {
-        const bandClr = hc ? fg : (redSpan.color || ft.danger);
-        g.append("path")
-            .attr("d", arcPath(cx, cy, spec.bandR, a0 - span * redSpan.f0, a0 - span * redSpan.f1))
-            .attr("fill", "none").attr("stroke", bandClr)
-            .attr("stroke-width", 7).attr("stroke-linecap", "round")
-            .style("filter", (!hc && ctx.theme === "dark") ? `drop-shadow(0 0 6px ${bandClr})` : null);
+    // Target-relative banding yields TWO danger runs (below and above target),
+    // so every run is drawn. Threshold banding yields one and is unchanged.
+    const redRuns = dangerSpans(ctx);
+    // Draw EVERY zone, not just danger. Previously only the red runs were
+    // painted, so the dial showed one of its three zones and target-relative
+    // banding (green at target, amber either side) never appeared at all.
+    if (spec.bandR != null) {
+        for (const run of zoneSpans(ctx)) {
+            const bandClr = hc ? fg : (run.color
+                || (run.band === "success" ? ft.sg : run.band === "warning" ? ft.sa : ft.danger));
+            g.append("path")
+                .attr("d", arcPath(cx, cy, spec.bandR, a0 - span * run.f0, a0 - span * run.f1))
+                .attr("fill", "none").attr("stroke", bandClr)
+                .attr("stroke-width", 7).attr("stroke-linecap", "round")
+                .style("filter", (!hc && ctx.theme === "dark") ? `drop-shadow(0 0 6px ${bandClr})` : null);
+        }
     }
 
     // Ticks + numbers
-    const cfg: DialCfg = { ...spec.cfg, labels: labelsFor(ctx, spec.cfg.majCount), redFrom: redSpan?.f0, redTo: redSpan?.f1 };
+    const cfg: DialCfg = { ...spec.cfg, labels: labelsFor(ctx, spec.cfg.majCount), redRanges: redRuns };
     const ticks = dialTicks(cx, cy, a0, span, cfg);
     for (const m of ticks.min) {
         g.append("line").attr("x1", m.x1).attr("y1", m.y1).attr("x2", m.x2).attr("y2", m.y2)
@@ -122,7 +137,9 @@ function renderDial(ctx: GaugeRenderCtx, spec: DialSpec, redSpan: { f0: number; 
     }
 
     // Needle + hub
-    const needleClr = stateClr ?? null;
+    // A pane-picked Needle Colour wins over the state colour; unset falls back
+    // to stateVsTarget() and then the board token, as before.
+    const needleClr = ctx.needleColor ?? stateClr ?? null;
     g.append("polygon")
         .attr("points", needlePoints(cx, cy, spec.needleLen, 6))
         .attr("transform", needleTransform(cx, cy, a0 - span * vFrac))
@@ -135,13 +152,13 @@ function renderDial(ctx: GaugeRenderCtx, spec: DialSpec, redSpan: { f0: number; 
     // Value + unit — pane colour/font overrides win; board look is the auto
     if (ctx.showValue) {
         const vt = g.append("text").attr("x", cx).attr("y", spec.valueY).attr("text-anchor", "middle")
-            .attr("fill", hc ? fg : (ctx.valueColor || needleClr || t.val))
+            .attr("fill", hc ? fg : (ctx.valueColor || needleClr || ft.val))
             .style("font-feature-settings", TNUM)
             .text(ctx.valueText);
         applyFont(vt, ctx.valueFont, spec.valueSize, "700");
         if (ctx.unitText && ctx.showUnit) {
             const ut = g.append("text").attr("x", cx).attr("y", spec.unitY).attr("text-anchor", "middle")
-                .attr("fill", hc ? fg : (ctx.unitColor || t.unit))
+                .attr("fill", hc ? fg : (ctx.unitColor || ft.unit))
                 .style("letter-spacing", "0.08em")
                 .text(ctx.unitText);
             applyFont(ut, ctx.unitFont, 12, "600");
@@ -155,7 +172,7 @@ export function renderPressureDial(ctx: GaugeRenderCtx): void {
         designW: 240, designH: 214, cx: 120, cy: 118, a0: 225, span: 270,
         cfg: { rOut: 98, rMajIn: 84, rMinIn: 90, rNum: 70, majCount: 11, minorPer: 1, labels: [] },
         face: false, needleLen: 86, bandR: 101, valueY: 168, unitY: 186, valueSize: 30,
-    }, dangerSpan(ctx), null);
+    }, null, null);
 }
 
 /** Speedometer — 240° dome face; needle + readout recolour vs target. (board g2) */
@@ -166,7 +183,7 @@ export function renderSpeedometer(ctx: GaugeRenderCtx): void {
     renderDial(ctx, {
         designW: 250, designH: 200, cx: 125, cy: 122, a0: 210, span: 240,
         cfg: { rOut: 104, rMajIn: 88, rMinIn: 95, rNum: 74, majCount: 7, minorPer: 3, labels: [] },
-        face: true, needleLen: 92, bandR: null, valueY: 169, unitY: 196, valueSize: 22,
+        face: true, needleLen: 92, bandR: 104, valueY: 169, unitY: 196, valueSize: 22,
     }, null, clr);
 }
 
@@ -176,5 +193,5 @@ export function renderTachometer(ctx: GaugeRenderCtx): void {
         designW: 250, designH: 200, cx: 125, cy: 122, a0: 210, span: 240,
         cfg: { rOut: 104, rMajIn: 88, rMinIn: 95, rNum: 74, majCount: 9, minorPer: 1, labels: [] },
         face: true, needleLen: 92, bandR: 107, valueY: 164, unitY: 182, valueSize: 30,
-    }, dangerSpan(ctx), null);
+    }, null, null);
 }

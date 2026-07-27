@@ -85,6 +85,47 @@ class GaugeSettingsCard extends FormattingSettingsCard {
 }
 
 class ZonesCard extends FormattingSettingsCard {
+    // BANDING MODE (2026-07-27). "thresholds" is the original ascending model —
+    // zone1End/zone2End cut the scale into three stacked bands and higher is
+    // assumed better. It stays the DEFAULT so every saved report renders exactly
+    // as before (additive-only; production GUID locks the schema).
+    // "targetRelative" bands by distance FROM the target instead: on-target is
+    // green, a tolerance either side is amber, anything beyond is red. Symmetric,
+    // so it handles metrics where overshoot is as bad as undershoot (pressure,
+    // spend, headcount) — which the ascending model cannot express at all.
+    bandingMode = new formattingSettings.ItemDropdown({
+        name: "bandingMode",
+        displayName: "Banding",
+        description: "How zones are derived: fixed thresholds up the scale, or tolerance bands around the target",
+        items: [
+            { displayName: "Thresholds", value: "thresholds" },
+            { displayName: "Target relative", value: "targetRelative" },
+        ],
+        value: { displayName: "Thresholds", value: "thresholds" },
+    });
+
+    onTargetTolerance = new formattingSettings.NumUpDown({
+        name: "onTargetTolerance",
+        displayName: "On-target ±%",
+        description: "Target relative: within this % of target counts as on target (green)",
+        value: 2,
+        options: {
+            minValue: { type: powerbi.visuals.ValidatorType.Min, value: 0 },
+            maxValue: { type: powerbi.visuals.ValidatorType.Max, value: 100 }
+        }
+    });
+
+    warningTolerance = new formattingSettings.NumUpDown({
+        name: "warningTolerance",
+        displayName: "Warning ±%",
+        description: "Target relative: within this % of target is a warning (amber); beyond it is danger (red)",
+        value: 5,
+        options: {
+            minValue: { type: powerbi.visuals.ValidatorType.Min, value: 0 },
+            maxValue: { type: powerbi.visuals.ValidatorType.Max, value: 100 }
+        }
+    });
+
     zone1End = new formattingSettings.NumUpDown({
         name: "zone1End",
         displayName: "Zone 1 End",
@@ -172,6 +213,9 @@ class ZonesCard extends FormattingSettingsCard {
     // Gradient/callout slices retired with the remix (2026-07-17) — the
     // instruments consume thresholds + colours only.
     slices: Array<FormattingSettingsSlice> = [
+        this.bandingMode,
+        this.onTargetTolerance,
+        this.warningTolerance,
         this.zone1End,
         this.zone1Color,
         this.zone2End,
@@ -357,11 +401,15 @@ class ValueDisplayCard extends FormattingSettingsCard {
 
     name: string = "valueDisplay";
     displayName: string = "Value Display";
-    // valueStyle/needleColor retired with the remix (instrument needles are
-    // part of each style's board look). Fonts + colours stay and are wired
-    // into every instrument's value/unit line.
+    // valueStyle stays retired with the remix (instrument needles are part of
+    // each style's board look). needleColor is BACK on the pane (Neil
+    // 2026-07-27, "the needle colour was selectable"): retiring it from slices
+    // left the class member and the capabilities entry in place but unbound, so
+    // the value never populated from the dataView and every renderer silently
+    // fell through to the stateVsTarget colour.
     slices: Array<FormattingSettingsSlice> = [
         this.showValue,
+        this.needleColor,
         this.valueFormat,
         this.decimalPlaces,
         this.valueColor,
@@ -416,6 +464,7 @@ export class GaugeStyleSettings extends FormattingSettingsCard {
             { displayName: "Slate", value: "slate" },
             { displayName: "Deep navy", value: "deepNavy" },
             { displayName: "Ink", value: "ink" },
+            { displayName: "Light grey", value: "lightGrey" },
             { displayName: "None", value: "none" },
         ],
         value: { displayName: "Auto (dome)", value: "auto" },
@@ -430,6 +479,16 @@ export class GaugeStyleSettings extends FormattingSettingsCard {
 export class ValueArcSettings extends FormattingSettingsCard {
     name = "valueArc";
     displayName = "Value Arc";
+
+    // Explicit ring/arc colour (Neil 2026-07-27). Wins over the zone colour and
+    // the board token, so a ring is not forced to follow whichever band the
+    // value happens to sit in. Empty = auto (zone colour, then board token).
+    ringColor = new formattingSettings.ColorPicker({
+        name: "ringColor",
+        displayName: "Ring Colour",
+        description: "Explicit colour for the progress ring / value arc. Leave empty to follow the zone colour.",
+        value: { value: "" }
+    });
 
     arcStyle = new formattingSettings.ItemDropdown({
         name: "arcStyle",
@@ -451,7 +510,7 @@ export class ValueArcSettings extends FormattingSettingsCard {
         }
     });
 
-    slices: FormattingSettingsSlice[] = [this.arcStyle, this.opacity];
+    slices: FormattingSettingsSlice[] = [this.arcStyle, this.ringColor, this.opacity];
 }
 
 export class VisualFormattingSettingsModel extends FormattingSettingsModel {

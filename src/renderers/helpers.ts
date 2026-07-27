@@ -22,6 +22,8 @@ export interface GaugeZone {
 export interface ValueArcConfig {
     style: "overlay" | "band" | "hidden";
     opacity: number; // 0-100, 100 = fully opaque
+    // Explicit ring/arc colour. null = auto (zone colour, then board token).
+    ringColor: string | null;
 }
 
 export interface FontOpts {
@@ -54,6 +56,11 @@ export interface GaugeRenderCtx {
     // Pane colour overrides — null = auto (board/theme token)
     valueColor: string | null;
     unitColor: string | null;
+    // Needle Colour is a real, selectable pane property, but the remix dial
+    // renderers were colouring the needle purely from stateVsTarget() and never
+    // consulted it — a user-picked needle silently did nothing. null = auto
+    // (state colour / board token), a set value wins.
+    needleColor: string | null;
     targetColor: string | null;
     comparisonColor: string | null;
     valueFont: FontOpts;
@@ -127,6 +134,10 @@ export interface DialCfg {
     rOut: number; rMajIn: number; rMinIn: number; rNum: number;
     majCount: number; minorPer?: number;
     labels: string[]; redFrom?: number; redTo?: number;
+    // Target-relative banding has two danger runs, so tick colouring needs the
+    // full set rather than a single from/to pair. redFrom/redTo stay for the
+    // threshold model's single run.
+    redRanges?: Array<{ f0: number; f1: number }>;
 }
 export interface DialTicks {
     maj: { x1: number; y1: number; x2: number; y2: number; red: boolean }[];
@@ -140,7 +151,9 @@ export function dialTicks(cx: number, cy: number, a0: number, span: number, cfg:
     const mc = cfg.majCount, mp = cfg.minorPer || 0;
     for (let i = 0; i < mc; i++) {
         const f = i / (mc - 1), a = a0 - span * f;
-        const red = cfg.redFrom != null && f >= cfg.redFrom - 1e-6 && f <= (cfg.redTo ?? 1) + 1e-6;
+        const red = cfg.redRanges?.length
+            ? cfg.redRanges.some(r => f >= r.f0 - 1e-6 && f <= r.f1 + 1e-6)
+            : (cfg.redFrom != null && f >= cfg.redFrom - 1e-6 && f <= (cfg.redTo ?? 1) + 1e-6);
         const o = polar(cx, cy, cfg.rOut, a), ip = polar(cx, cy, cfg.rMajIn, a), np = polar(cx, cy, cfg.rNum, a);
         maj.push({ x1: o.x, y1: o.y, x2: ip.x, y2: ip.y, red });
         nums.push({ x: np.x, y: np.y, label: cfg.labels[i], red });
@@ -220,13 +233,32 @@ export function fraction(ctx: GaugeRenderCtx, v: number): number {
  * the BOTTOM), so the band must follow the actual zone extent — caught live
  * on the sample dataset 2026-07-17, where from→end painted the whole dial. */
 export function dangerSpan(ctx: GaugeRenderCtx): { f0: number; f1: number; color: string } | null {
-    const dz = ctx.zones.filter(z => z.band === "danger" && z.to > z.from);
-    if (!dz.length) return null;
-    return {
-        f0: fraction(ctx, Math.min(...dz.map(z => z.from))),
-        f1: fraction(ctx, Math.max(...dz.map(z => z.to))),
-        color: dz[0].color,
-    };
+    const all = dangerSpans(ctx);
+    return all.length ? all[0] : null;
+}
+
+/** ALL danger runs as domain fractions. The ascending threshold model has one
+ *  contiguous danger zone at the bottom, so this returns a single span and the
+ *  dial renders exactly as before. TARGET-RELATIVE banding puts danger on BOTH
+ *  sides of the target — collapsing those to min(from)..max(to) (what the old
+ *  single-span version did) spanned the whole scale and painted the entire dial
+ *  red, so each run has to stay separate. */
+export function dangerSpans(ctx: GaugeRenderCtx): Array<{ f0: number; f1: number; color: string }> {
+    return ctx.zones
+        .filter(z => z.band === "danger" && z.to > z.from)
+        .map(z => ({ f0: fraction(ctx, z.from), f1: fraction(ctx, z.to), color: z.color }))
+        .filter(s => s.f1 > s.f0);
+}
+
+/** EVERY zone as domain fractions + its colour, in scale order. The dial family
+ *  used to draw only the danger runs, so a "Zone Gauge" showed exactly one of its
+ *  three zones — and target-relative banding (green at target, amber buffer either
+ *  side) was computed but invisible. Renderers draw the full set. */
+export function zoneSpans(ctx: GaugeRenderCtx): Array<{ f0: number; f1: number; color: string; band: string }> {
+    return ctx.zones
+        .filter(z => z.to > z.from)
+        .map(z => ({ f0: fraction(ctx, z.from), f1: fraction(ctx, z.to), color: z.color, band: z.band }))
+        .filter(s => s.f1 > s.f0);
 }
 
 /** State vs target, per the board speedometer rule. */
