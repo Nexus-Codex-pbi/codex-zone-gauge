@@ -5,7 +5,7 @@
 
 import {
     GaugeRenderCtx, galleryTokens, arcPath, clearGroup, fitTransform,
-    ensureGradients, progFill, applyFont, TNUM, SEGOE,
+    ensureGradients, progFill, applyFont, TNUM, SEGOE, activeZoneColor,
 } from "./helpers";
 
 export function renderProgressRing(ctx: GaugeRenderCtx): void {
@@ -74,7 +74,9 @@ export function renderProgressRing(ctx: GaugeRenderCtx): void {
 
     if (ctx.showValue) {
         const vt = g.append("text").attr("x", cx).attr("y", 104).attr("text-anchor", "middle")
-            .attr("fill", hc ? fg : (ctx.valueColor || t.val))
+            .attr("fill", hc ? fg : (ctx.valueColor
+                || (ctx.matchNeedleColor ? (ctx.needleColor ?? activeZoneColor(ctx)) : null)
+                || t.val))
             .style("font-feature-settings", TNUM)
             .text(`${Math.round(pv)}%`);
         applyFont(vt, ctx.valueFont, 40, "700");

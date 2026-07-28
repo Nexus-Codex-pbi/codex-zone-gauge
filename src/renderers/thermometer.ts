@@ -7,7 +7,7 @@
 
 import {
     GaugeRenderCtx, galleryTokens, clearGroup, fitTransform, fraction,
-    ensureGradients, thermFill, applyFont, TNUM, SEGOE,
+    ensureGradients, thermFill, applyFont, TNUM, SEGOE, activeZoneColor,
 } from "./helpers";
 
 const TOP_Y = 24, BOT_Y = 176, H = BOT_Y - TOP_Y;
@@ -67,7 +67,9 @@ export function renderThermometer(ctx: GaugeRenderCtx): void {
             .style("font-weight", "700").style("font-feature-settings", TNUM)
             .text(ctx.valueText);
         const vt = g.append("text").attr("x", 150).attr("y", 104).attr("text-anchor", "start")
-            .attr("fill", hc ? fg : (ctx.valueColor || t.val))
+            .attr("fill", hc ? fg : (ctx.valueColor
+                || (ctx.matchNeedleColor ? (ctx.needleColor ?? activeZoneColor(ctx)) : null)
+                || t.val))
             .style("font-feature-settings", TNUM)
             .text(ctx.valueText);
         applyFont(vt, ctx.valueFont, 30, "700");
