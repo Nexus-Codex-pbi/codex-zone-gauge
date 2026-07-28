@@ -25,8 +25,6 @@ import DataView = powerbi.DataView;
 import { VisualFormattingSettingsModel, textAlignFor } from "./settings";
 import { clamp, CODEX_TOKENS } from "./utils";
 
-import { dataViewWildcard } from "powerbi-visuals-utils-dataviewutils";
-import { ColorHelper } from "powerbi-visuals-utils-colorutils";
 import { toRgba } from "./shared/colorHelpers";
 import { Theme, accentToken, targetToken } from "./shared/bandEngine";
 import { surfaceTokens } from "./shared/designTokens";
@@ -112,12 +110,6 @@ export class Visual implements IVisual {
     private altGroup: Selection<SVGGElement, unknown, null, undefined>;
     private zoneSegGroup: Selection<SVGGElement, unknown, null, undefined>;
     private needleHubInner: Selection<SVGCircleElement, unknown, null, undefined>;
-
-    // Conditional formatting (fx) state — Zone 3 (Success) Colour (TRANS-04)
-    private zone3ColorHelper: ColorHelper | null = null;
-
-    // Conditional formatting (fx) state — Value readout Colour (TEXT-02)
-    private valueColorHelper: ColorHelper | null = null;
 
     // Persistent SVG selections — created once, updated on each render
     private borderPath: Selection<SVGPathElement, unknown, null, undefined>;
@@ -358,43 +350,17 @@ export class Visual implements IVisual {
             this.currentSelectionId = parsed.selectionId;
             this.svg.style("cursor", parsed.selectionId ? "pointer" : "default");
 
-            // ─── Conditional formatting (fx) wiring — Zone 3 (Success)
-            // Colour (TRANS-04). A bare `instanceKind: ConstantOrRule`
-            // declaration in settings.ts does not make the fx button
-            // functional on its own (Pitfall 5) — it also needs a
-            // `selector` (dataViewWildcard) and an `altConstantSelector`
-            // bound to a concrete selectionId. Resolved via
-            // ColorHelper.getColorForMeasure at the existing z3Color read
-            // site below (single-value visual, matching the pbiKpiCard
-            // reference pattern) — no other zone/needle/hub/callout code
-            // touched (Task 3 scope guard).
-            const zone3ColorSlice = this.formattingSettings.zonesCard.zone3Color;
-            zone3ColorSlice.selector = dataViewWildcard.createDataViewWildcardSelector(
-                dataViewWildcard.DataViewWildcardMatchingOption.InstancesAndTotals
-            );
-            zone3ColorSlice.altConstantSelector = undefined; // card-level constant persistence: swatch edits apply to ALL instances + round-trip into the pane (first-instance binding persisted a row-0-only override); fx rules stay per-instance via the wildcard selector;
-            this.zone3ColorHelper = new ColorHelper(
-                this.host.colorPalette,
-                { objectName: "zones", propertyName: "zone3Color" },
-                zone3ColorSlice.value.value
-            );
-
-            // ─── Conditional formatting (fx) wiring — Value readout
-            // Colour (TEXT-02). Same wildcard-selector + altConstantSelector
-            // + ColorHelper.getColorForMeasure pattern as Zone 3 Colour
-            // above, targeting the "value" measure role. Resolved at the
-            // existing effectiveValueColor read site below — no other
-            // zone/needle/hub/callout code touched (Task 3 scope guard).
-            const valueColorSlice = this.formattingSettings.valueDisplayCard.valueColor;
-            valueColorSlice.selector = dataViewWildcard.createDataViewWildcardSelector(
-                dataViewWildcard.DataViewWildcardMatchingOption.InstancesAndTotals
-            );
-            valueColorSlice.altConstantSelector = undefined; // card-level constant persistence: swatch edits apply to ALL instances + round-trip into the pane (first-instance binding persisted a row-0-only override); fx rules stay per-instance via the wildcard selector;
-            this.valueColorHelper = new ColorHelper(
-                this.host.colorPalette,
-                { objectName: "valueDisplay", propertyName: "valueColor" },
-                valueColorSlice.value.value
-            );
+            // NOTE — do NOT attach a dataViewWildcard selector to Zone 3 Colour or
+            // Value Colour. That pattern is for per-DATAPOINT colours: one slice per
+            // category, each carrying `altConstantSelector: dataPoint.selectionId
+            // .getSelector()` (formattingmodel README). Both of these are single
+            // card-level settings on a single-value gauge, with no datapoint to bind
+            // the constant to. With the wildcard and no alt-constant selector, Desktop
+            // persisted a swatch pick through the wildcard, where metadata.objects
+            // never sees it — so the pane accepted the colour and snapped back to the
+            // default on the next update, and the render read a value that was never
+            // written. Card-level (no selector) is what zones 1 and 2 have always
+            // used, and it round-trips. See feedback_pbiviz_fx_wildcard_reverts_swatch.
 
             // ── Settings shortcuts ──────────────────────────────────────
             const titleCfg  = this.formattingSettings.titleSettingsCard;
@@ -468,17 +434,16 @@ export class Visual implements IVisual {
                 const hcC = this.isHighContrast;
                 const dangerClr  = hcC ? this.hcForeground : zonesCfg.zone1Color.value.value;
                 const warningClr = hcC ? this.hcForeground : zonesCfg.zone2Color.value.value;
-                // Zone 3 is the fx-enabled colour (instanceKind ConstantOrRule +
-                // a dataViewWildcard selector, TRANS-04), so Desktop persists swatch
-                // edits THROUGH that selector — the card-level slice value does not
-                // reflect them. zone3ColorHelper was built for exactly this and was
-                // then never referenced anywhere, so reading the raw slice meant a
-                // user's Zone 3 Colour pick had no effect at all. Resolve through the
-                // helper; its seed IS the slice value, so an unset picker still yields
-                // the authored default.
-                const successClr = hcC ? this.hcForeground
-                    : (this.zone3ColorHelper?.getColorForMeasure(dataView?.metadata?.objects, "zone3")
-                       || zonesCfg.zone3Color.value.value);
+                // Zone 3 reads its slice EXACTLY like zones 1 and 2. It used to be
+                // routed through a dataViewWildcard selector + ColorHelper, which is
+                // the per-DATAPOINT pattern (one slice per category, bound to that
+                // datapoint's selectionId — see the formattingmodel README). Zone 3 is
+                // a single card-level setting on a single-value gauge, so the wildcard
+                // sent swatch edits somewhere metadata.objects never sees: the pane
+                // accepted a pick then snapped straight back to the default on the next
+                // update (Neil 2026-07-28). No selector = card-level persistence = it
+                // sticks, which is why the two sibling zones always worked.
+                const successClr = hcC ? this.hcForeground : zonesCfg.zone3Color.value.value;
 
                 // ── Band model ──────────────────────────────────────────────
                 // "thresholds" (default, unchanged): ascending cuts up the
@@ -537,16 +502,6 @@ export class Visual implements IVisual {
                 // "board/theme token"; an explicit change wins (D-16 idiom).
                 const tClr = tCfg.targetColor.value.value;
                 const cClr = cCfg.comparisonColor.value.value;
-                // Only consult the fx helper when a valueColor rule/override ACTUALLY
-                // exists on the dataView. getColorForMeasure always returns a colour —
-                // with an empty seed it hands back a palette colour — so calling it
-                // unconditionally made valueColor permanently non-null and the readout
-                // could never follow the needle/zone. (My first guard compared against
-                // the seed, but the seed is "", so any real colour passed it.)
-                const fxRuleBound = !!(dataView?.metadata?.objects as { valueDisplay?: { valueColor?: unknown } })?.valueDisplay?.valueColor;
-                const fxValueClr = fxRuleBound
-                    ? (this.valueColorHelper?.getColorForMeasure(dataView?.metadata?.objects, "value") ?? "")
-                    : "";
                 const ctx: GaugeRenderCtx = {
                     group: this.altGroup.node() as SVGGElement,
                     defs: this.defs.node() as SVGDefsElement,
@@ -559,14 +514,14 @@ export class Visual implements IVisual {
                     unitText: parsed.categoryLabel || "",
                     showValue: !!valueCfg.showValue.value,
                     showUnit: !!valueCfg.showLabel.value,
-                    // ColorHelper.getColorForMeasure ALWAYS returns a colour — it
-                    // falls back to the seed it was constructed with and never
-                    // returns "". So fxValueClr was always truthy and valueColor
-                    // was never null, which meant the readout could never follow
-                    // the zone/needle colour. Only count it as an override when it
-                    // genuinely differs from that seed (an fx rule or a real swatch
-                    // edit); otherwise leave null so the zone colour wins.
-                    valueColor: (fxValueClr || valueCfg.valueColor.value.value || "") || null,
+                    // Read the slice directly, same as every other colour on this
+                    // card. This used to go through a dataViewWildcard selector +
+                    // ColorHelper, which broke it twice over: the wildcard meant a
+                    // swatch pick never landed in metadata.objects (so the pane
+                    // reverted AND the guard that gated the helper could never fire),
+                    // and getColorForMeasure never returns "" so it had to be gated at
+                    // all. Empty = unset, so the zone/needle colour still wins.
+                    valueColor: valueCfg.valueColor.value.value || null,
                     unitColor: valueCfg.labelColor.value.value || null,
                     needleColor: valueCfg.needleColor.value.value || null,
                     matchNeedleColor: !!valueCfg.matchNeedleColor.value,
