@@ -31,6 +31,29 @@ function labelsFor(ctx: GaugeRenderCtx, count: number): string[] {
     return out;
 }
 
+/** Angular margin the face wedge needs past each scale end so the FIRST and LAST
+ * scale labels sit wholly inside it.
+ *
+ * The face is a pie wedge whose two straight edges are RADIAL, at exactly the
+ * scale-start and scale-end angles — and those are precisely where the end
+ * labels sit. Without a margin each end label is bisected by the boundary: half
+ * the glyph on the face, half on the canvas. Invisible when face and canvas are
+ * close in tone, glaring when a light face sits on a dark background or vice
+ * versa (Neil 2026-07-28: "start and end values wash out").
+ *
+ * This is NOT the 30° dome spill fixed earlier — that wedge ended 30° past the
+ * scale for no reason. This is a measured enclosure margin derived from the
+ * label box itself: half-diagonal of the widest end label at rNum, +2° breathing
+ * room, so it grows with a 5-digit max and stays tight for "0".
+ */
+function facePadDeg(labels: string[], rNum: number): number {
+    const chars = Math.max(labels[0].length, labels[labels.length - 1].length);
+    const halfW = chars * 7.2 / 2;          // 13px / 600-weight digit advance
+    const halfDiag = Math.sqrt(halfW * halfW + 7 * 7);
+    const deg = Math.asin(Math.min(1, halfDiag / rNum)) * 180 / Math.PI;
+    return Math.min(20, Math.max(6, deg + 2));
+}
+
 function renderDial(ctx: GaugeRenderCtx, spec: DialSpec, redSpan: { f0: number; f1: number; color: string } | null, stateClr: string | null): void {
     ensureGradients(ctx.defs);
     const t = galleryTokens(ctx.theme);
@@ -64,8 +87,9 @@ function renderDial(ctx: GaugeRenderCtx, spec: DialSpec, redSpan: { f0: number; 
             : (ctx.dialFace && ctx.dialFace !== "auto")
                 ? (FACE_MAP[ctx.dialFace] ?? domeFill(ctx.theme))
                 : domeFill(ctx.theme);
+        const pad = facePadDeg(labelsFor(ctx, spec.cfg.majCount), spec.cfg.rNum);
         g.append("path")
-            .attr("d", faceArcPath(cx, cy, 112, a0, a0 - span))
+            .attr("d", faceArcPath(cx, cy, 112, a0 + pad, a0 - span - pad))
             .attr("fill", faceFill)
             .attr("stroke", hc ? fg : t.dfbd).attr("stroke-width", 1);
         if (!hc) {
@@ -158,16 +182,22 @@ function renderDial(ctx: GaugeRenderCtx, spec: DialSpec, redSpan: { f0: number; 
     g.append("circle").attr("cx", cx).attr("cy", cy).attr("r", 3)
         .attr("fill", hc ? bg : (needleClr ? "#000000" : ft.hubi));
 
-    // Value + unit — pane colour/font overrides win; board look is the auto
+    // Value + unit — pane colour/font overrides win; board look is the auto.
+    // These use the CANVAS tokens, not the face tokens: on the 240° dials the
+    // readout sits in the wedge's open bottom notch, so it is drawn on the report
+    // background, NOT on the dial face. Colouring it like the face washed it out
+    // whenever the two were opposite — pale-on-white with a slate face, dark-on-
+    // black with a light-grey face (Neil 2026-07-28, same fault family as the end
+    // labels above). The pressure dial has no face, so ft === t and nothing moves.
     if (ctx.showValue) {
         const vt = g.append("text").attr("x", cx).attr("y", spec.valueY).attr("text-anchor", "middle")
-            .attr("fill", hc ? fg : (ctx.valueColor || (ctx.matchNeedleColor ? needleClr : null) || ft.val))
+            .attr("fill", hc ? fg : (ctx.valueColor || (ctx.matchNeedleColor ? needleClr : null) || t.val))
             .style("font-feature-settings", TNUM)
             .text(ctx.valueText);
         applyFont(vt, ctx.valueFont, spec.valueSize, "700");
         if (ctx.unitText && ctx.showUnit) {
             const ut = g.append("text").attr("x", cx).attr("y", spec.unitY).attr("text-anchor", "middle")
-                .attr("fill", hc ? fg : (ctx.unitColor || ft.unit))
+                .attr("fill", hc ? fg : (ctx.unitColor || t.unit))
                 .style("letter-spacing", "0.08em")
                 .text(ctx.unitText);
             applyFont(ut, ctx.unitFont, 12, "600");
