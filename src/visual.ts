@@ -36,6 +36,7 @@ import { renderPressureDial, renderSpeedometer, renderTachometer } from "./rende
 import { renderProgressRing } from "./renderers/ring";
 import { renderSegmentedMeter } from "./renderers/meter";
 import { renderThermometer } from "./renderers/thermometer";
+import { LicenseGate } from "./shared/licensing";
 
 /** Luminance-based theme pick (matches the pbiKpiCard v3 pilot's own
  * 0.55 threshold convention) — this visual's Background Colour default
@@ -137,7 +138,22 @@ export class Visual implements IVisual {
     /** Currently bound selection ID for click-to-filter */
     private currentSelectionId: ISelectionId | null = null;
 
+    private licenseGate: LicenseGate;
+
+    private lastUpdateOptions: VisualUpdateOptions | null = null;
+
+
     constructor(options: VisualConstructorOptions) {
+
+        // NO FREE TIER — an unlicensed user gets the whole visual blocked.
+
+        // The check is async, so re-run the last update once it resolves.
+
+        this.licenseGate = new LicenseGate(options.host, () => {
+
+            if (this.lastUpdateOptions) this.update(this.lastUpdateOptions);
+
+        });
         this.formattingSettingsService = new FormattingSettingsService();
         this.target = options.element;
         this.host = options.host;
@@ -257,6 +273,14 @@ export class Visual implements IVisual {
 
     public update(options: VisualUpdateOptions): void {
         this.eventService.renderingStarted(options);
+        this.lastUpdateOptions = options;
+
+        if (this.licenseGate.blockedThisFrame()) {
+            this.target.style.display = "none";
+            this.eventService.renderingFinished(options);
+            return;
+        }
+        this.target.style.display = "";
 
         try {
             // High contrast detection
