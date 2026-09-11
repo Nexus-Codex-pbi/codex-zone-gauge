@@ -676,6 +676,15 @@ export class Visual implements IVisual {
                 const bandingMode = String(zonesCfg.bandingMode.value?.value || "thresholds");
                 const targetVal = parsed.target;
                 let zones: GaugeZone[];
+                let activeZone: Pick<GaugeZone, "band" | "color">;
+                if (bandingMode === "targetRelative" && targetVal == null) {
+                    this.currentTooltipItems = [];
+                    this.altGroup.style("display", "none").selectAll("*").remove();
+                    this.gaugeGroup.style("display", null);
+                    this.renderEmpty(width, height, "Visual_TargetRequired");
+                    this.eventService.renderingFinished(options);
+                    return;
+                }
                 if (bandingMode === "targetRelative" && targetVal != null && isFinite(targetVal)) {
                     // Tolerances are % OF TARGET, so the bands scale with the
                     // measure instead of being pinned to the axis.
@@ -684,7 +693,15 @@ export class Visual implements IVisual {
                     // Warning must sit OUTSIDE on-target; if mis-set, collapse the
                     // amber band rather than invert it.
                     const outerPct = Math.max(innerPct, outerRaw);
-                    const mag = Math.abs(targetVal) || 1;
+                    const mag = Math.abs(targetVal);
+                    // Classification uses the raw reading, independently of clipped/zero-width arcs.
+                    const distance = Math.abs(rawVal - targetVal);
+                    const epsilon = Number.EPSILON * Math.max(Math.abs(rawVal), mag) * 8;
+                    activeZone = distance <= innerPct * mag + epsilon
+                        ? { band: "success", color: successClr }
+                        : distance <= outerPct * mag + epsilon
+                            ? { band: "warning", color: warningClr }
+                            : { band: "danger", color: dangerClr };
                     const lo2 = targetVal - outerPct * mag, lo1 = targetVal - innerPct * mag;
                     const hi1 = targetVal + innerPct * mag, hi2 = targetVal + outerPct * mag;
                     const clamp = (n: number) => Math.min(maxVal, Math.max(minVal, n));
@@ -713,6 +730,8 @@ export class Visual implements IVisual {
                           band: lowGood ? "danger" : "success",
                           color: lowGood ? dangerClr : successClr },
                     ];
+                    activeZone = zones.find(z => rawVal >= z.from && rawVal <= z.to)
+                        ?? zones[rawVal < minVal ? 0 : zones.length - 1];
                 }
                 const vaCfg = this.formattingSettings.valueArcCard;
                 const tCfg = this.formattingSettings.targetSettingsCard;
@@ -762,7 +781,7 @@ export class Visual implements IVisual {
                         italic: !!valueCfg.labelItalic.value,
                         underline: !!valueCfg.labelUnderline.value,
                     },
-                    zones,
+                    zones, activeZone,
                     valueArc: {
                         style: String(vaCfg.arcStyle.value.value || "overlay") as "overlay" | "band" | "hidden",
                         opacity: vaCfg.opacity.value ?? 100,
@@ -784,6 +803,12 @@ export class Visual implements IVisual {
                 // The tooltip is the last place an out-of-range reading could be
                 // recovered, so it reports the raw measure, never the clamp.
                 this.currentTooltipItems = [{ displayName: "Value", value: fmtV(rawVal) }];
+                if (bandingMode === "targetRelative" && targetVal === 0) {
+                    this.currentTooltipItems.push({
+                        displayName: "Banding",
+                        value: "Percent tolerances of zero are zero; only exact target is on target.",
+                    });
+                }
                 if (rawVal < minVal || rawVal > maxVal) {
                     this.currentTooltipItems.push({
                         displayName: "Range",

@@ -87,6 +87,7 @@ export interface GaugeRenderCtx {
     valueFont: FontOpts;
     unitFont: FontOpts;
     zones: GaugeZone[];
+    activeZone: Pick<GaugeZone, "band" | "color">;
     valueArc: ValueArcConfig;
     segments: number;            // Segmented Meter LED count (pane, default 18)
     dialFace: string;            // speedo/tach face: auto|slate|deepNavy|ink|none
@@ -286,9 +287,7 @@ export function zoneSpans(ctx: GaugeRenderCtx): Array<{ f0: number; f1: number; 
  *  needle and readout should agree with the band the value is standing in —
  *  a cyan needle inside a red zone tells the reader two different things. */
 export function activeZoneColor(ctx: GaugeRenderCtx): string | null {
-    const z = ctx.zones.find(z => ctx.value >= z.from && ctx.value <= z.to)
-        ?? ctx.zones[ctx.zones.length - 1];
-    return z && z.color ? z.color : null;
+    return ctx.activeZone.color || null;
 }
 
 /** State vs target, per the board speedometer rule. */
