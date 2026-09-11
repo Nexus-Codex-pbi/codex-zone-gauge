@@ -7,6 +7,7 @@ import {
     GaugeRenderCtx, galleryTokens, arcPath, clearGroup, fitTransform,
     ensureGradients, progFill, applyFont, TNUM, SEGOE, activeZoneColor,
 } from "./helpers";
+import { formatModelNumber } from "../shared/numberFormat";
 
 export function renderProgressRing(ctx: GaugeRenderCtx): void {
     ensureGradients(ctx.defs);
@@ -28,6 +29,9 @@ export function renderProgressRing(ctx: GaugeRenderCtx): void {
     const denom = ctx.target != null && ctx.target !== 0 ? ctx.target : (ctx.max || 100);
     const pv = denom !== 0 ? (ctx.rawValue / denom) * 100 : 0;
     const pf = Math.max(0, pv / 100);
+    const percent = (value: number) => formatModelNumber(value / 100,
+        "0" + (ctx.decimalPlaces ? "." + "0".repeat(ctx.decimalPlaces) : "") + "%");
+    const denominatorLabel = ctx.target != null && ctx.target !== 0 ? "target" : "maximum";
 
     g.append("circle").attr("cx", cx).attr("cy", cy).attr("r", r)
         .attr("fill", "none").attr("stroke", hc ? "none" : t.track).attr("stroke-width", 15);
@@ -73,11 +77,13 @@ export function renderProgressRing(ctx: GaugeRenderCtx): void {
                 || (ctx.matchNeedleColor ? (ctx.needleColor ?? activeZoneColor(ctx)) : null)
                 || t.val))
             .style("font-feature-settings", TNUM)
-            .text(`${Math.round(pv)}%`);
+            .text(percent(pv));
         applyFont(vt, ctx.valueFont, 40, "700");
-        const ut = g.append("text").attr("x", cx).attr("y", 130).attr("text-anchor", "middle")
-            .attr("fill", hc ? fg : (ctx.unitColor || (pv > 100 ? zoneClr : null) || t.unit))
-            .text(pv > 100 ? `+${Math.round(pv - 100)}% over target` : (ctx.unitText || "of target"));
-        applyFont(ut, ctx.unitFont, 12, pv > 100 ? "700" : "600");
+        if (ctx.showUnit) {
+            const ut = g.append("text").attr("x", cx).attr("y", 130).attr("text-anchor", "middle")
+                .attr("fill", hc ? fg : (ctx.unitColor || (pv > 100 ? zoneClr : null) || t.unit))
+                .text(pv > 100 ? `+${percent(pv - 100)} over ${denominatorLabel}` : (ctx.unitText || `of ${denominatorLabel}`));
+            applyFont(ut, ctx.unitFont, 12, pv > 100 ? "700" : "600");
+        }
     }
 }

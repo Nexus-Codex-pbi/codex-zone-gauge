@@ -58,7 +58,7 @@ export function renderThermometer(ctx: GaugeRenderCtx): void {
         g.append("line").attr("x1", TX - 8).attr("y1", y).attr("x2", TX + TW + 8).attr("y2", y)
             .attr("stroke", hc ? fg : clr).attr("stroke-width", w).attr("stroke-linecap", "round");
     };
-    if (ctx.target != null) tickAt(ctx.target, ctx.targetColor || t.tgtc, 3);
+    if (ctx.showTarget && ctx.target != null) tickAt(ctx.target, ctx.targetColor || t.tgtc, 3);
     if (ctx.comparison != null) tickAt(ctx.comparison, ctx.comparisonColor || t.unit, 2);
 
     // Reading in the bulb (board) + big value beside the column

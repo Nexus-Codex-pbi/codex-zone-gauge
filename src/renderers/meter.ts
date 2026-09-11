@@ -47,7 +47,7 @@ export function renderSegmentedMeter(ctx: GaugeRenderCtx): void {
         g.append("line").attr("x1", o.x).attr("y1", o.y).attr("x2", i2.x).attr("y2", i2.y)
             .attr("stroke", hc ? fg : clr).attr("stroke-width", w).attr("stroke-linecap", "round");
     };
-    if (ctx.target != null) tickAt(ctx.target, ctx.targetColor || t.tgtc, 3);
+    if (ctx.showTarget && ctx.target != null) tickAt(ctx.target, ctx.targetColor || t.tgtc, 3);
     if (ctx.comparison != null) tickAt(ctx.comparison, ctx.comparisonColor || t.unit, 2);
 
     if (ctx.showValue) {

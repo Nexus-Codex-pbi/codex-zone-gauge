@@ -140,7 +140,7 @@ function renderDial(ctx: GaugeRenderCtx, spec: DialSpec, redSpan: { f0: number; 
     }
 
     // Target tick (violet, per board tgt)
-    if (ctx.target != null) {
+    if (ctx.showTarget && ctx.target != null) {
         const aT = a0 - span * fraction(ctx, ctx.target);
         const to = polar(cx, cy, spec.cfg.rOut + 6, aT), ti = polar(cx, cy, spec.cfg.rMajIn - 4, aT);
         g.append("line").attr("x1", to.x).attr("y1", to.y).attr("x2", ti.x).attr("y2", ti.y)

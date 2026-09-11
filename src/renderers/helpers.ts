@@ -58,6 +58,8 @@ export interface GaugeRenderCtx {
      *  could not recover the real measurement). */
     rawValue: number;
     target: number | null;
+    showTarget: boolean;
+    decimalPlaces: number;
     comparison: number | null;
     valueText: string;           // formatted by the visual's existing formatter
     /** A SCALE label. `tickCount` is how many major ticks the instrument draws

@@ -591,6 +591,7 @@ export class Visual implements IVisual {
             }
             const isArcStyle = ["pressureDial", "speedometer", "tachometer", "progressRing"].indexOf(styleKey) >= 0;
             this.formattingSettings.valueArcCard.visible = isArcStyle;
+            valueCfg.valueFormat.visible = styleKey !== "progressRing";
             // Per-style options surface only where they apply
             this.formattingSettings.gaugeStyleCard.segments.visible = styleKey === "segmentedMeter";
             this.formattingSettings.gaugeStyleCard.dialFace.visible = styleKey === "speedometer" || styleKey === "tachometer";
@@ -746,7 +747,9 @@ export class Visual implements IVisual {
                     width, height, titleHeight,
                     theme, hc: hcC, hcFg: this.hcForeground, hcBg: this.hcBackground,
                     min: minVal, max: maxVal, value: currentVal, rawValue: rawVal,
-                    target: tCfg.showTarget.value ? parsed.target : null,
+                    target: parsed.target,
+                    showTarget: !!tCfg.showTarget.value,
+                    decimalPlaces: Math.max(0, Math.min(15, Math.round(vdec) || 0)),
                     comparison: cCfg.showComparison.value ? parsed.comparison : null,
                     valueText: fmtV(rawVal),
                     scaleText: fmtScale,
