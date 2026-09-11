@@ -9,6 +9,7 @@ import {
     GaugeRenderCtx, galleryTokens, clearGroup, fitTransform, fraction,
     ensureGradients, thermFill, applyFont, TNUM, SEGOE, activeZoneColor,
 } from "./helpers";
+import { contrastInk } from "../shared/colorHelpers";
 
 const TOP_Y = 24, BOT_Y = 176, H = BOT_Y - TOP_Y;
 const TX = 44, TW = 22, BULB_CY = 198, BULB_R = 20;
@@ -21,6 +22,7 @@ export function renderThermometer(ctx: GaugeRenderCtx): void {
     const g = clearGroup(ctx.group).append("g")
         .attr("transform", fitTransform(ctx, 236, 232));
     const hc = ctx.hc, fg = ctx.hcFg, bg = ctx.hcBg;
+    const fill = hc ? fg : (activeZoneColor(ctx) || t.prog);
 
     const tf = fraction(ctx, ctx.value);
     const fillH = +(tf * H).toFixed(2), fillY = +(BOT_Y - fillH).toFixed(2);
@@ -30,12 +32,12 @@ export function renderThermometer(ctx: GaugeRenderCtx): void {
         .attr("stroke", hc ? fg : "none").attr("stroke-width", hc ? 2 : 0);
     if (fillH > 0) {
         g.append("rect").attr("x", TX).attr("y", fillY).attr("width", TW).attr("height", fillH)
-            .attr("rx", TW / 2).attr("fill", hc ? fg : thermFill(ctx.theme))
-            .style("filter", (!hc && t.glow) ? "drop-shadow(0 0 6px #ff2bd6)" : null);
+            .attr("rx", TW / 2).attr("fill", fill)
+            .style("filter", (!hc && t.glow) ? `drop-shadow(0 0 6px ${fill})` : null);
     }
     g.append("circle").attr("cx", TX + TW / 2).attr("cy", BULB_CY).attr("r", BULB_R)
-        .attr("fill", hc ? fg : thermFill(ctx.theme))
-        .style("filter", (!hc && t.glow) ? "drop-shadow(0 0 6px #ff2bd6)" : null);
+        .attr("fill", fill)
+        .style("filter", (!hc && t.glow) ? `drop-shadow(0 0 6px ${fill})` : null);
 
     // Scale ticks + numbers (quarters of the domain)
     for (let i = 0; i <= 4; i++) {
@@ -62,7 +64,7 @@ export function renderThermometer(ctx: GaugeRenderCtx): void {
     // Reading in the bulb (board) + big value beside the column
     if (ctx.showValue) {
         g.append("text").attr("x", TX + TW / 2).attr("y", BULB_CY + 6).attr("text-anchor", "middle")
-            .attr("fill", hc ? bg : (ctx.theme === "dark" ? "#07071a" : "#ffffff"))
+            .attr("fill", hc ? bg : contrastInk(fill, "#000000", "#ffffff"))
             .style("font-family", SEGOE).style("font-size", "18px")
             .style("font-weight", "700").style("font-feature-settings", TNUM)
             .text(ctx.valueText);

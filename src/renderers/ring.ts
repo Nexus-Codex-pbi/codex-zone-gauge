@@ -44,19 +44,7 @@ export function renderProgressRing(ctx: GaugeRenderCtx): void {
     // hero treatment, and "band" stays the explicit opt-in for the thin one.
     const thinBand = ctx.valueArc.style === "band";
 
-    // ZONE COLOUR drives the ring (v1 behaviour, dropped in the remix). The
-    // pickers stayed in the pane but nothing read them here, so a report that
-    // set Zone 1/2/3 Colour saw no change on the ring at all. Resolve the zone
-    // the value sits in and use its colour, honouring the D-16 sentinel rule:
-    // a colour still at its declared default means "auto", so the board token
-    // wins; anything else is an explicit authorial choice and beats the token.
-    const ZONE_SENTINELS = ["#e60e22", "#d4920a", "#007064"];
-    const activeZone = ctx.zones.find(z => ctx.value >= z.from && ctx.value <= z.to)
-        ?? ctx.zones[ctx.zones.length - 1];
-    const zoneClr = activeZone
-        && activeZone.color
-        && ZONE_SENTINELS.indexOf(String(activeZone.color).toLowerCase()) < 0
-        ? activeZone.color : null;
+    const zoneClr = activeZoneColor(ctx);
     const arcStroke = hc ? fg : (ctx.valueArc.ringColor ?? zoneClr ?? (thinBand ? t.prog : progFill(ctx.theme)));
     if (pf > 0) {
         g.append("path")
@@ -71,12 +59,12 @@ export function renderProgressRing(ctx: GaugeRenderCtx): void {
     if (pf > 1) {
         g.append("path")
             .attr("d", arcPath(cx, cy, r, 90, 90 - 360 * Math.min(pf - 1, 1)))
-            .attr("fill", "none").attr("stroke", hc ? fg : t.over)
+            .attr("fill", "none").attr("stroke", arcStroke)
             .attr("stroke-width", thinBand ? 6 : 15)
             .attr("stroke-linecap", "round")
             .attr("opacity", alpha)
-            .style("filter", !hc ? `drop-shadow(0 0 8px ${t.over})` : null);
-        g.append("circle").attr("cx", cx).attr("cy", 24).attr("r", 6).attr("fill", hc ? fg : t.over);
+            .style("filter", !hc ? `drop-shadow(0 0 8px ${zoneClr || t.prog})` : null);
+        g.append("circle").attr("cx", cx).attr("cy", 24).attr("r", 6).attr("fill", arcStroke);
     }
 
     if (ctx.showValue) {
@@ -88,7 +76,7 @@ export function renderProgressRing(ctx: GaugeRenderCtx): void {
             .text(`${Math.round(pv)}%`);
         applyFont(vt, ctx.valueFont, 40, "700");
         const ut = g.append("text").attr("x", cx).attr("y", 130).attr("text-anchor", "middle")
-            .attr("fill", hc ? fg : (pv > 100 ? t.over : (ctx.unitColor || t.unit)))
+            .attr("fill", hc ? fg : (ctx.unitColor || (pv > 100 ? zoneClr : null) || t.unit))
             .text(pv > 100 ? `+${Math.round(pv - 100)}% over target` : (ctx.unitText || "of target"));
         applyFont(ut, ctx.unitFont, 12, pv > 100 ? "700" : "600");
     }

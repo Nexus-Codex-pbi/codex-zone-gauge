@@ -29,7 +29,7 @@ export function renderSegmentedMeter(ctx: GaugeRenderCtx): void {
         const dv = ctx.min + (ctx.max - ctx.min) * pos;
         const zone = ctx.zones.find(z => dv >= z.from && dv <= z.to);
         const col = hc ? fg
-            : zone ? (zone.band === "success" ? t.sg : zone.band === "warning" ? t.sa : t.sm)
+            : zone ? zone.color
             : pos < 0.55 ? t.sg : pos < 0.8 ? t.sa : t.sm;
         const on = (i + 0.5) / N <= sf;
         g.append("path")
