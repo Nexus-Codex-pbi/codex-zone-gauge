@@ -161,7 +161,7 @@ export class Visual implements IVisual {
     private eventService: IVisualEventService;
     private selectionManager: ISelectionManager;
     private localizationManager: ILocalizationManager;
-    private formattingSettings: VisualFormattingSettingsModel;
+    private formattingSettings: VisualFormattingSettingsModel = new VisualFormattingSettingsModel();
     private formattingSettingsService: FormattingSettingsService;
 
     private tooltipService: ITooltipService;
