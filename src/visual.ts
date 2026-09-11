@@ -165,6 +165,8 @@ interface ParsedData {
      *  host delivered it. Null when the measure carries none. It is the only
      *  thing that says what UNIT the number is in — see the readout formatter. */
     valueFormatString: string | null;
+    targetFormatString: string | null;
+    comparisonFormatString: string | null;
     categoryLabel: string | null;
     selectionId: ISelectionId | null;
 }
@@ -600,56 +602,23 @@ export class Visual implements IVisual {
                 this.gaugeGroup.style("display", "none");
                 this.altGroup.style("display", null);
 
-                // ── Readout formatting (NEXUS cycle-15 §6) ──────────────────
-                // Value Format + Decimal Places stay authoritative for the
-                // DIGITS. What the pane cannot express is the measure's UNIT,
-                // and that is exactly what the model format string carries:
-                //
-                //   "0.0%"      the stored number is a FRACTION of one, so 0.78
-                //               IS 78%. Appending "%" to it printed "0.8%" and
-                //               restated a 78% reading as under one percent.
-                //   "$#,##0.00" the number is money. Printing "12500.0" dropped
-                //               both the currency symbol and the grouping.
-                //
-                // So a model format that carries a unit wins, and everything
-                // else — the ordinary numeric formats, and measures with no
-                // format at all — keeps the existing pane-driven path verbatim,
-                // which is what leaves saved reports rendering as they did.
-                // The string is read by the shared formatter so the suite keeps
-                // ONE reading of a .NET fraction section (shared/numberFormat).
-                //
-                // Read eagerly: an unsupported persisted Value Format resolves
-                // to undefined here and must still throw into renderingFailed
-                // rather than being silently normalised.
+                // Model formats supply units and precision unless the author explicitly sets digits.
                 const vfmt = valueCfg.valueFormat.value.value as string;
-                const vdec = valueCfg.decimalPlaces.value;
+                const requestedDecimals = valueCfg.decimalPlaces.value;
+                const vdec = Number.isFinite(requestedDecimals)
+                    ? Math.max(0, Math.min(15, Math.round(requestedDecimals)))
+                    : DECIMAL_PLACES_DEFAULT;
                 const modelCarriesUnit = modelIsPercent || (!!modelFmt && /[$£€¥]/.test(modelFmt));
-
-                // DECIMAL PLACES AND THE MODEL FORMAT ARE NOT RIVALS. The model
-                // format supplies the UNIT — the currency symbol, the percent,
-                // the grouping — and Decimal Places supplies the DIGIT COUNT.
-                // Round 1 handed the whole job to the model format whenever it
-                // carried a unit, which silently disabled a live pane control:
-                // set Decimal Places to 0 on a currency measure and the readout
-                // still printed $12,500.00. Both apply now, by rewriting the
-                // format's fraction section and letting the shared formatter
-                // read it — so there is still exactly ONE reading of a .NET
-                // fraction section in the suite (shared/numberFormat).
-                //
-                // An UNTOUCHED Decimal Places expresses nothing, so it takes
-                // the measure's own precision rather than overriding it with a
-                // default nobody chose (the D-16 sentinel idiom this visual
-                // already uses for Target/Comparison Colour, and §7's "
-                // distinguish unset defaults from explicit"). That is also what
-                // keeps a saved currency report rendering exactly as it does
-                // today: $12,500.00, not $12,500.0.
-                const decIsExplicit = vdec != null && vdec !== DECIMAL_PLACES_DEFAULT;
-                const unitFmt = modelCarriesUnit && decIsExplicit
+                const decIsExplicit = Object.prototype.hasOwnProperty.call(
+                    dataView?.metadata?.objects?.valueDisplay || {}, "decimalPlaces");
+                const unitFmt = modelFmt && decIsExplicit
                     ? withFractionDigits(modelFmt, vdec)
                     : modelFmt;
-                const fmtV = (n: number) => modelCarriesUnit
-                    ? formatModelNumber(n, unitFmt, this.host.locale)
-                    : (vfmt === "percent" ? n.toFixed(vdec) + "%" : n.toFixed(vdec));
+                const fmtV = (n: number) => vfmt === "percent" && !modelCarriesUnit
+                    ? n.toFixed(vdec) + "%"
+                    : unitFmt ? formatModelNumber(n, unitFmt, this.host.locale) : n.toFixed(vdec);
+                const fmtOther = (n: number, format: string | null) => format
+                    ? formatModelNumber(n, format, this.host.locale) : n.toFixed(vdec);
 
                 const hcC = this.isHighContrast;
                 const dangerClr  = hcC ? this.hcForeground : zonesCfg.zone1Color.value.value;
@@ -819,8 +788,8 @@ export class Visual implements IVisual {
                     });
                 }
                 if (parsed.categoryLabel) this.currentTooltipItems.push({ displayName: "Category", value: parsed.categoryLabel });
-                if (parsed.target !== null) this.currentTooltipItems.push({ displayName: "Target", value: fmtV(parsed.target) });
-                if (parsed.comparison !== null) this.currentTooltipItems.push({ displayName: "Comparison", value: fmtV(parsed.comparison) });
+                if (parsed.target !== null) this.currentTooltipItems.push({ displayName: "Target", value: fmtOther(parsed.target, parsed.targetFormatString) });
+                if (parsed.comparison !== null) this.currentTooltipItems.push({ displayName: "Comparison", value: fmtOther(parsed.comparison, parsed.comparisonFormatString) });
 
                 this.eventService.renderingFinished(options);
                 return;
@@ -910,6 +879,8 @@ export class Visual implements IVisual {
         let min: number | null = null;
         let max: number | null = null;
         let valueFormatString: string | null = null;
+        let targetFormatString: string | null = null;
+        let comparisonFormatString: string | null = null;
 
         for (let i = 0; i < columns.length; i++) {
             const roles = columns[i].source.roles;
@@ -921,9 +892,11 @@ export class Visual implements IVisual {
             }
             if (roles && roles["target"]) {
                 target = this.toNum(raw);
+                targetFormatString = columns[i].source.format || null;
             }
             if (roles && roles["comparison"]) {
                 comparison = this.toNum(raw);
+                comparisonFormatString = columns[i].source.format || null;
             }
             if (roles && roles["minimum"]) {
                 min = this.toNum(raw);
@@ -959,6 +932,8 @@ export class Visual implements IVisual {
             min,
             max,
             valueFormatString,
+            targetFormatString,
+            comparisonFormatString,
             categoryLabel,
             selectionId
         };
