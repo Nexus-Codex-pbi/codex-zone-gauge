@@ -144,6 +144,11 @@ export function polar(cx: number, cy: number, r: number, aDeg: number): { x: num
 /** Open arc path from angle a0 to a1 (degrees, mathematical orientation). */
 export function arcPath(cx: number, cy: number, r: number, a0: number, a1: number): string {
     const p0 = polar(cx, cy, r, a0), p1 = polar(cx, cy, r, a1);
+    if (Math.abs(a0 - a1) >= 360) {
+        const sweep = a1 < a0 ? 1 : 0;
+        const mid = polar(cx, cy, r, a0 + (sweep ? -180 : 180));
+        return `M${p0.x} ${p0.y} A${r} ${r} 0 1 ${sweep} ${mid.x} ${mid.y} A${r} ${r} 0 1 ${sweep} ${p0.x} ${p0.y}`;
+    }
     const lg = Math.abs(a0 - a1) > 180 ? 1 : 0;
     return `M${p0.x} ${p0.y} A${r} ${r} 0 ${lg} 1 ${p1.x} ${p1.y}`;
 }
