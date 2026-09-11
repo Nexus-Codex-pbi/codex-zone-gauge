@@ -72,12 +72,60 @@ const GAUGE_ANGLES: Record<string, { start: number; end: number }> = {
     arc:          { start: -Math.PI * 5 / 6,   end: Math.PI * 5 / 6 }
 };
 
+/** Drop float noise from a derived bound (0.1 * 3 = 0.30000000000000004). */
+function tidy(n: number): number {
+    return +n.toPrecision(12);
+}
+
+/** The next "nice" axis step at or above `rough`: 1, 2, 2.5 or 5 × 10^k. The
+ *  scale a reader can actually count in. */
+function niceStep(rough: number): number {
+    if (!isFinite(rough) || rough <= 0) return 1;
+    const magnitude = Math.pow(10, Math.floor(Math.log10(rough)));
+    const normalised = rough / magnitude;
+    const step = normalised <= 1 ? 1 : normalised <= 2 ? 2 : normalised <= 2.5 ? 2.5 : normalised <= 5 ? 5 : 10;
+    return tidy(step * magnitude);
+}
+
+/** Scale envelope derived from the DATA, for a gauge whose Minimum/Maximum
+ *  wells are empty (NEXUS cycle-15 §1: "With bounds unbound, Value 250 uses the
+ *  fixed 0–100 range and displays 100 despite the README promising data-derived
+ *  bounds"). The readout already shows the real 250; the AXIS was still the
+ *  invented one, so the needle sat welded to the end of a scale nothing in the
+ *  report had asked for.
+ *
+ *  The envelope contains every delivered reading — value, target and comparison,
+ *  regardless of whether their markers are switched on, because a scale is
+ *  arithmetic and marker visibility is drawing (§4's lesson) — and rounds out to
+ *  a nice step so the tick labels stay countable. It is 0-BASED whenever every
+ *  reading is non-negative: a gauge that starts at 0 is what a reader assumes
+ *  unless the data says otherwise, and a zoomed baseline exaggerates the sweep.
+ *  The top lands on the first nice step STRICTLY above the largest reading, so
+ *  the highest value is never welded to the end of its own axis. */
+function derivedBounds(readings: number[]): { min: number; max: number } {
+    const low = Math.min(...readings), high = Math.max(...readings);
+    const base = low >= 0 ? 0 : low;
+    // All readings identical (a lone Value with no Target is the common case)
+    // still needs somewhere for the needle to travel.
+    const spread = high > base ? high - base : (Math.abs(high) || 1);
+    const step = niceStep(spread / 5);
+    return {
+        min: base >= 0 ? 0 : tidy((Math.ceil(low / step) - 1) * step),
+        max: tidy((Math.floor(high / step) + 1) * step),
+    };
+}
+
 interface ParsedData {
     value: number;
     target: number | null;
     comparison: number | null;
-    min: number;
-    max: number;
+    /** Minimum / Maximum AS BOUND. `null` means the well is empty (or carries
+     *  nothing numeric) and the scale has to be derived from the data — see
+     *  derivedBounds(). They used to default to 0 and 100 right here, which is
+     *  why an unbound gauge pinned a 250 reading at the end of a 0–100 axis it
+     *  had invented (NEXUS cycle-15 §1). */
+    min: number | null;
+    max: number | null;
     /** The Value column's MODEL format string ("0.0%", "$#,##0.00", …), as the
      *  host delivered it. Null when the measure carries none. It is the only
      *  thing that says what UNIT the number is in — see the readout formatter. */
@@ -429,8 +477,16 @@ export class Visual implements IVisual {
                 this.titleEl.style("display", "none");
             }
 
-            const minVal = parsed.min;
-            const maxVal = Math.max(parsed.max, minVal + 1); // prevent zero-range
+            // ── Scale bounds (NEXUS cycle-15 §1) ────────────────────────
+            // Bound ends are used exactly as delivered. An UNBOUND end is
+            // derived from the readings instead of falling back to the
+            // invented 0–100 the visual used to assume — see derivedBounds().
+            // A report that binds both wells is arithmetically untouched.
+            const readings = [parsed.value, parsed.target, parsed.comparison]
+                .filter((n): n is number => n !== null && isFinite(n));
+            const derived = derivedBounds(readings);
+            const minVal = parsed.min ?? derived.min;
+            const maxVal = Math.max(parsed.max ?? derived.max, minVal + 1); // prevent zero-range
             // GEOMETRY vs READING (NEXUS cycle-15 §1). `currentVal` is clamped
             // because a needle cannot point past the end of its own scale.
             // `rawVal` is the measure as delivered and is what every NUMBER the
@@ -765,8 +821,8 @@ export class Visual implements IVisual {
             value,
             target,
             comparison,
-            min: min ?? 0,
-            max: max ?? 100,
+            min,
+            max,
             valueFormatString,
             categoryLabel,
             selectionId

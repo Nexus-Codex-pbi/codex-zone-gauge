@@ -109,7 +109,7 @@ The visual provides the following format pane cards:
 ## Limitations
 - The visual expects numeric values for Value, Target, Comparison, Minimum, and Maximum. Non-numeric values are treated as zero.
 - If Value is not bound or contains no valid numeric data, the visual displays an empty state.
-- Minimum and Maximum, if not bound, are auto-calculated as: min = min(value, target, comparison) * 0.8, max = max(value, target, comparison) * 1.2 (with a minimum range of 1).
+- Minimum and Maximum, if not bound, are derived from the data: the scale is rounded out to a countable step that contains Value, Target and Comparison, and starts at 0 whenever all of them are non-negative. The largest reading always sits below the top of the scale rather than on it. Binding either well pins that end exactly as given and only the other end is derived.
 - Zone 1 End and Zone 2 End must be numeric and within the gauge range (min to max); if not, they are clamped.
 - Each data role accepts only one field.
 - The visual uses a data reduction algorithm (top 30,000 rows) which may limit the number of rows displayed (only the first row is used for the gauge).
