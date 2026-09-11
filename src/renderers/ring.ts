@@ -4,14 +4,15 @@
  * (gallery board g4; viewBox 220×220, r 86, stroke 15) */
 
 import {
-    GaugeRenderCtx, galleryTokens, arcPath, clearGroup, fitTransform,
+    GaugeRenderCtx, canvasTokens, arcPath, clearGroup, fitTransform,
     ensureGradients, progFill, applyFont, TNUM, SEGOE, activeZoneColor, polar, fitText, fitLabel,
 } from "./helpers";
 import { formatModelNumber } from "../shared/numberFormat";
+import { contrastRatio } from "../shared/colorHelpers";
 
 export function renderProgressRing(ctx: GaugeRenderCtx): void {
     ensureGradients(ctx.defs);
-    const t = galleryTokens(ctx.theme);
+    const t = canvasTokens(ctx);
     const g = clearGroup(ctx.group).append("g")
         .attr("transform", fitTransform(ctx, 220, 220));
     const hc = ctx.hc, fg = ctx.hcFg;
@@ -94,7 +95,8 @@ export function renderProgressRing(ctx: GaugeRenderCtx): void {
         fitText(vt, 144, 48);
         if (ctx.showUnit) {
             const ut = g.append("text").attr("x", cx).attr("y", 130).attr("text-anchor", "middle")
-                .attr("fill", hc ? fg : (ctx.unitColor || (pv > 100 ? zoneClr : null) || t.unit))
+                .attr("fill", hc ? fg : (ctx.unitColor
+                    || (pv > 100 && zoneClr && contrastRatio(zoneClr, ctx.surface) >= 4.5 ? zoneClr : t.unit)))
                 .text(pv > 100 ? `+${percent(pv - 100)} over ${denominatorLabel}` : (ctx.unitText || `of ${denominatorLabel}`));
             applyFont(ut, ctx.unitFont, 12, pv > 100 ? "700" : "600");
             fitLabel(ut, 150);

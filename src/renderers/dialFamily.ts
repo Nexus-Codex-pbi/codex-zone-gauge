@@ -4,7 +4,7 @@
  * Geometry constants are the gallery board's own (g1/g2/g3 blocks). */
 
 import {
-    GaugeRenderCtx, galleryTokens, dialTicks, arcPath, faceArcPath,
+    GaugeRenderCtx, galleryTokens, canvasTokens, dialTicks, arcPath, faceArcPath,
     needlePoints, needleTransform, polar, clearGroup, fitTransform,
     fraction, dangerSpans, zoneSpans, activeZoneColor, stateVsTarget, ensureGradients,
     domeFill, hubFill, needleFill, applyFont, TNUM, DialCfg, SEGOE, scaleTicks, fitText, fitLabel,
@@ -51,7 +51,7 @@ function facePadDeg(labels: string[], rNum: number): number {
 
 function renderDial(ctx: GaugeRenderCtx, spec: DialSpec, redSpan: { f0: number; f1: number; color: string } | null, stateClr: string | null): void {
     ensureGradients(ctx.defs);
-    const t = galleryTokens(ctx.theme);
+    const t = canvasTokens(ctx);
     const g = clearGroup(ctx.group).append("g")
         .attr("transform", fitTransform(ctx, spec.designW, spec.designH));
     const { cx, cy, a0, span } = spec;
@@ -75,7 +75,8 @@ function renderDial(ctx: GaugeRenderCtx, spec: DialSpec, redSpan: { f0: number; 
     const FACE_MAP: Record<string, string> = { slate: "#1b1b3a", deepNavy: "#07223a", ink: "#04040e", lightGrey: "#dfe3ee", none: "transparent" };
     const faceIsDarkFlat = spec.face && !hc && ["slate", "deepNavy", "ink"].indexOf(ctx.dialFace) >= 0;
     const faceIsLightFlat = spec.face && !hc && ["lightGrey"].indexOf(ctx.dialFace) >= 0;
-    const ft = faceIsDarkFlat ? galleryTokens("dark") : faceIsLightFlat ? galleryTokens("light") : t;
+    const ft = faceIsDarkFlat ? galleryTokens("dark") : faceIsLightFlat ? galleryTokens("light")
+        : spec.face && ctx.dialFace !== "none" ? galleryTokens(ctx.theme) : t;
     const faceThemeKey = faceIsDarkFlat ? "dark" as const : faceIsLightFlat ? "light" as const : ctx.theme;
     if (spec.face) {
         const faceFill = hc ? bg
@@ -131,7 +132,7 @@ function renderDial(ctx: GaugeRenderCtx, spec: DialSpec, redSpan: { f0: number; 
     for (const n of ticks.nums) {
         const text = g.append("text").attr("x", n.x).attr("y", n.y)
             .attr("text-anchor", "middle").attr("dominant-baseline", "central")
-            .attr("fill", hc ? fg : (n.red ? ft.danger : ft.num))
+            .attr("fill", hc ? fg : ft.num)
             .style("font-family", SEGOE).style("font-size", "13px").style("font-weight", "600")
             .text(n.label);
         const pitch = Math.min(...cfg.fractions.slice(1).map((f, i) => f - cfg.fractions[i]));

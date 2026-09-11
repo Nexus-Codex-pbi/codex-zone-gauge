@@ -6,7 +6,7 @@
  * (gallery board g6; viewBox 150×232, track x44 w22 y24–176, bulb cy198 r20) */
 
 import {
-    GaugeRenderCtx, galleryTokens, clearGroup, fitTransform, fraction,
+    GaugeRenderCtx, canvasTokens, clearGroup, fitTransform, fraction,
     ensureGradients, thermFill, applyFont, TNUM, SEGOE, activeZoneColor, fitText, fitLabel,
 } from "./helpers";
 import { contrastInk } from "../shared/colorHelpers";
@@ -16,7 +16,7 @@ const TX = 44, TW = 22, BULB_CY = 198, BULB_R = 20;
 
 export function renderThermometer(ctx: GaugeRenderCtx): void {
     ensureGradients(ctx.defs);
-    const t = galleryTokens(ctx.theme);
+    const t = canvasTokens(ctx);
     // Wider design box than the board's lone thermometer so the value line
     // fits beside it in a PBI tile (board shows value inside the bulb only).
     const g = clearGroup(ctx.group).append("g")

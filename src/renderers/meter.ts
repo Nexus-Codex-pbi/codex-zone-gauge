@@ -6,14 +6,14 @@
  * (gallery board g5; viewBox 250×190, r 94, seg stroke 13) */
 
 import {
-    GaugeRenderCtx, galleryTokens, arcPath, polar, clearGroup, fitTransform,
+    GaugeRenderCtx, canvasTokens, arcPath, polar, clearGroup, fitTransform,
     fraction, applyFont, TNUM, SEGOE, activeZoneColor, fitText, fitLabel,
 } from "./helpers";
 
 const A0 = 190, SPAN = 200, CX = 125, CY = 130, R = 94;
 
 export function renderSegmentedMeter(ctx: GaugeRenderCtx): void {
-    const t = galleryTokens(ctx.theme);
+    const t = canvasTokens(ctx);
     const g = clearGroup(ctx.group).append("g")
         .attr("transform", fitTransform(ctx, 250, 190));
     const hc = ctx.hc, fg = ctx.hcFg;

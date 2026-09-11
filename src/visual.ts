@@ -25,7 +25,7 @@ import DataView = powerbi.DataView;
 import { VisualFormattingSettingsModel, textAlignFor } from "./settings";
 import { clamp, CODEX_TOKENS } from "./utils";
 
-import { toRgba } from "./shared/colorHelpers";
+import { toRgba, compositeOver, surfaceTone, contrastInk, mutedInk } from "./shared/colorHelpers";
 import { formatModelNumber } from "./shared/numberFormat";
 import { Theme, accentToken, targetToken } from "./shared/bandEngine";
 import { surfaceTokens } from "./shared/designTokens";
@@ -38,19 +38,6 @@ import { renderProgressRing } from "./renderers/ring";
 import { renderSegmentedMeter } from "./renderers/meter";
 import { renderThermometer } from "./renderers/thermometer";
 import { LicenseGate } from "./shared/licensing";
-
-/** Luminance-based theme pick (matches the pbiKpiCard v3 pilot's own
- * 0.55 threshold convention) — this visual's Background Colour default
- * is opaque white even though the overlay itself defaults transparent
- * (transparency 100), so the configured HEX is still a reliable
- * authorial-intent signal for the needle's theme-aware fallback below. */
-function themeFor(hex: string): Theme {
-    const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})/i.exec(hex || "");
-    if (!m) return "light";
-    const r = parseInt(m[1], 16), g = parseInt(m[2], 16), b = parseInt(m[3], 16);
-    const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-    return luminance < 0.5 ? "dark" : "light";
-}
 
 /**
  * Angle ranges for each gauge type (radians).
@@ -186,6 +173,7 @@ export class Visual implements IVisual {
     private isHighContrast: boolean = false;
     private hcForeground: string = "";
     private hcBackground: string = "";
+    private surface: string = "#ffffff";
 
     private svg: Selection<SVGSVGElement, unknown, null, undefined>;
     private backgroundRect: Selection<SVGRectElement, unknown, null, undefined>;
@@ -403,7 +391,12 @@ export class Visual implements IVisual {
             // needle's theme-aware default fallback below. Scope guard: this
             // is the ONLY new engine-level primitive Task 4 introduces; no
             // dome/face/hub/six-style rebuild (Phase 3, GAUGE-02/03).
-            const theme: Theme = themeFor(this.formattingSettings.background.backgroundColor.value?.value ?? "#ffffff");
+            const background = this.formattingSettings.background;
+            this.surface = this.isHighContrast ? this.hcBackground : compositeOver(
+                background.backgroundColor.value?.value ?? "#ffffff",
+                background.transparency.value ?? 100,
+                colorPalette?.background?.value || "#ffffff");
+            const theme: Theme = surfaceTone(this.surface);
 
             const width = Math.max(0, Number.isFinite(options.viewport.width) ? options.viewport.width : 0);
             const height = Math.max(0, Number.isFinite(options.viewport.height) ? options.viewport.height : 0);
@@ -425,7 +418,7 @@ export class Visual implements IVisual {
                     .attr("height", height)
                     .attr("fill", toRgba(bgHex, bgTransparencyPct));
             } else {
-                this.backgroundRect.attr("fill", "none");
+                this.backgroundRect.attr("width", width).attr("height", height).attr("fill", this.hcBackground);
             }
 
             // ─── Suite chrome: Border card + Corner Accents on the full-tile
@@ -512,8 +505,8 @@ export class Visual implements IVisual {
                 // Adaptive default (D-16 sentinel): untouched shared-Title navy
                 // swaps to the dark text token on dark surfaces.
                 const setTitle = titleCfg.titleColor.value.value;
-                const adaptiveTitle = setTitle === "#1a1a2e" && theme === "dark"
-                    ? surfaceTokens("dark").text : setTitle;
+                const adaptiveTitle = setTitle === "#1a1a2e"
+                    ? contrastInk(this.surface, "#000000", "#ffffff") : setTitle;
                 this.titleEl
                     .attr("x", x)
                     .attr("y", titleFontSize + 4)
@@ -731,7 +724,7 @@ export class Visual implements IVisual {
                     group: this.altGroup.node() as SVGGElement,
                     defs: this.defs.node() as SVGDefsElement,
                     width, height, titleHeight,
-                    theme, hc: hcC, hcFg: this.hcForeground, hcBg: this.hcBackground,
+                    theme, surface: this.surface, hc: hcC, hcFg: this.hcForeground, hcBg: this.hcBackground,
                     min: minVal, max: maxVal, value: currentVal, rawValue: rawVal,
                     target: parsed.target,
                     showTarget: !!tCfg.showTarget.value,
@@ -1010,7 +1003,8 @@ export class Visual implements IVisual {
             .attr("text-anchor", "middle")
             .attr("dominant-baseline", "middle")
             .style("font-size", "14px")
-            .style("fill", this.isHighContrast ? this.hcForeground : "#999999")
+            .style("fill", this.isHighContrast ? this.hcForeground
+                : mutedInk(contrastInk(this.surface, "#000000", "#ffffff"), this.surface))
             .text(this.localizationManager.getDisplayName(messageKey))
             .style("display", null);
         fitText(this.emptyText, Math.max(1, width - 16), Math.max(1, height - 16));

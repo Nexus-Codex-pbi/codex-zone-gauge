@@ -12,6 +12,7 @@
 import { select, Selection } from "d3-selection";
 import { Theme } from "../shared/bandEngine";
 import { scaleLinear } from "d3-scale";
+import { contrastInk, mutedInk } from "../shared/colorHelpers";
 
 export interface GaugeZone {
     from: number;   // domain value
@@ -42,6 +43,7 @@ export interface GaugeRenderCtx {
     height: number;
     titleHeight: number;         // vertical offset consumed by the in-SVG title
     theme: Theme;
+    surface: string;
     hc: boolean;
     hcFg: string;
     hcBg: string;
@@ -123,6 +125,13 @@ export function galleryTokens(theme: Theme): GalleryTokens {
         pillbg: "#f1f3fa", pillbd: "#0384a3", dialdef: "#eceef5", dfbd: "rgba(0,0,0,0.10)", tgtc: "#6d28d9",
         glow: false,
     };
+}
+
+export function canvasTokens(ctx: GaugeRenderCtx): GalleryTokens {
+    const tokens = galleryTokens(ctx.theme);
+    const ink = contrastInk(ctx.surface, "#000000", "#ffffff");
+    const muted = mutedInk(ink, ctx.surface);
+    return { ...tokens, val: ink, num: ink, maj: ink, unit: muted, tick: muted };
 }
 
 /* ─── Geometry (verbatim port of the board's generator) ───────────────────── */
