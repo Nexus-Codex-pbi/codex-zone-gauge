@@ -278,10 +278,11 @@ export class Visual implements IVisual {
         // Corner-bracket card signature (suite kit) — appended after the SVG
         // so it overlays the gauge; accent-tinted, refreshed per render via
         // applyCardSignature. pointer-events:none.
+        const constructorPalette = this.host.colorPalette as ISandboxExtendedColorPalette;
         this.cornerSignature = makeCornerBrackets(
             this.target,
-            accentToken("dark"),
-            { variant: "cornerBracket", mirror: true }
+            constructorPalette.isHighContrast ? constructorPalette.foreground.value : accentToken("dark"),
+            { variant: "cornerBracket", mirror: true, glowMix: constructorPalette.isHighContrast ? 0 : 55 }
         );
 
         // Click-to-filter (1180.2.2.3 Filter Out)
