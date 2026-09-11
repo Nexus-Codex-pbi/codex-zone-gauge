@@ -26,7 +26,7 @@ function labelsFor(ctx: GaugeRenderCtx, count: number): string[] {
     const out: string[] = [];
     for (let i = 0; i < count; i++) {
         const v = ctx.min + (ctx.max - ctx.min) * (i / (count - 1));
-        out.push(String(Math.round(v * 10) / 10));
+        out.push(ctx.scaleText(v, count));
     }
     return out;
 }

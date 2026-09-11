@@ -60,6 +60,14 @@ export interface GaugeRenderCtx {
     target: number | null;
     comparison: number | null;
     valueText: string;           // formatted by the visual's existing formatter
+    /** A SCALE label. `tickCount` is how many major ticks the instrument draws
+     *  across the whole domain, which is what fixes the step — and the step is
+     *  what fixes the precision. Renderers used to do `Math.round(v * 10) / 10`
+     *  each on their own, which printed the same label against two different
+     *  ticks on any scale finer than 0.1 (NEXUS cycle-15 §1's sub-unit domains)
+     *  and printed a fraction-of-one axis under a percent readout (§6). One
+     *  formatter, owned by the visual, so the axis and the reading agree. */
+    scaleText: (value: number, tickCount: number) => string;
     unitText: string;            // label/unit line (may be "")
     showValue: boolean;
     showUnit: boolean;           // Value Display "Show Label" toggle

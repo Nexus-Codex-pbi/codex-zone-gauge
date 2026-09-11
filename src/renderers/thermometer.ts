@@ -47,7 +47,7 @@ export function renderThermometer(ctx: GaugeRenderCtx): void {
             .attr("text-anchor", "start").attr("dominant-baseline", "central")
             .attr("fill", hc ? fg : t.unit)
             .style("font-family", SEGOE).style("font-size", "12px").style("font-weight", "600")
-            .text(String(Math.round(v * 10) / 10));
+            .text(ctx.scaleText(v, 5));
     }
 
     // Target / comparison tick marks across the track

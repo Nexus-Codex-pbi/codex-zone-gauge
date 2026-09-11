@@ -87,6 +87,14 @@ function niceStep(rough: number): number {
     return tidy(step * magnitude);
 }
 
+/** Decimals a tick label needs so two adjacent ticks cannot print the same
+ *  text. One (the historic fixed rule) for every step of 0.1 or coarser, so no
+ *  existing scale's labels move; more only where the step is finer than that. */
+function scaleDigits(step: number): number {
+    if (!isFinite(step) || step <= 0) return 1;
+    return Math.max(1, Math.min(6, Math.ceil(-Math.log10(step)) + 1));
+}
+
 /** Scale envelope derived from the DATA, for a gauge whose Minimum/Maximum
  *  wells are empty (NEXUS cycle-15 §1: "With bounds unbound, Value 250 uses the
  *  fixed 0–100 range and displays 100 despite the README promising data-derived
@@ -486,7 +494,38 @@ export class Visual implements IVisual {
                 .filter((n): n is number => n !== null && isFinite(n));
             const derived = derivedBounds(readings);
             const minVal = parsed.min ?? derived.min;
-            const maxVal = Math.max(parsed.max ?? derived.max, minVal + 1); // prevent zero-range
+            const maxVal = parsed.max ?? derived.max;
+
+            // A SPAN IS WHATEVER THE REPORT SAYS IT IS (NEXUS cycle-15 §1).
+            // This used to be `Math.max(max, min + 1)` — a one-unit floor that
+            // could not tell a valid narrow domain from an invalid one. A real
+            // 0–0.5 scale was silently doubled to 0–1, so every reading on it
+            // was drawn at half its true position; reversed 100–0 became
+            // 100–101 and equal 50–50 became 50–51, each of them an axis the
+            // report never authored, carrying a needle pinned to one end and
+            // no indication anything was wrong. Only min >= max is genuinely
+            // undrawable, and that is now SAID rather than papered over.
+            if (!(maxVal > minVal)) {
+                this.currentTooltipItems = [];
+                this.altGroup.style("display", "none").selectAll("*").remove();
+                this.gaugeGroup.style("display", null);
+                this.renderEmpty(width, height, "Visual_InvalidRange");
+                this.eventService.renderingFinished(options);
+                return;
+            }
+
+            // Tick-label precision follows the SPAN. One decimal (the previous
+            // fixed rule) prints "0 0.1 0.1 0.2 0.2" on a 0–0.5 scale now that
+            // sub-unit domains render at their real extent — the same label
+            // twice against two different ticks. Digits are added only when a
+            // step finer than 0.1 needs them, so every scale that worked before
+            // is formatted character-for-character as it was.
+            const fmtScale = (v: number, tickCount: number): string => {
+                const step = tickCount > 1 ? Math.abs(maxVal - minVal) / (tickCount - 1) : Math.abs(maxVal - minVal);
+                const digits = scaleDigits(step);
+                const unit = Math.pow(10, digits);
+                return String(Math.round(v * unit) / unit);
+            };
             // GEOMETRY vs READING (NEXUS cycle-15 §1). `currentVal` is clamped
             // because a needle cannot point past the end of its own scale.
             // `rawVal` is the measure as delivered and is what every NUMBER the
@@ -630,6 +669,7 @@ export class Visual implements IVisual {
                     target: tCfg.showTarget.value ? parsed.target : null,
                     comparison: cCfg.showComparison.value ? parsed.comparison : null,
                     valueText: fmtV(rawVal),
+                    scaleText: fmtScale,
                     unitText: parsed.categoryLabel || "",
                     showValue: !!valueCfg.showValue.value,
                     showUnit: !!valueCfg.showLabel.value,
@@ -850,8 +890,11 @@ export class Visual implements IVisual {
         return isFinite(n) ? n : null;
     }
 
-    /** Empty state */
-    private renderEmpty(width: number, height: number): void {
+    /** Empty state — also the VALIDATION state. `messageKey` names the string
+     *  to show: the default "drop a measure here" prompt, or a specific reason
+     *  the gauge cannot be drawn (an unusable Minimum/Maximum pair). The reason
+     *  is shown rather than an invented axis (NEXUS cycle-15 §1). */
+    private renderEmpty(width: number, height: number, messageKey = "Visual_EmptyText"): void {
         this.titleEl.style("display", "none");
         this.borderPath.style("display", "none");
         this.zone1Path.style("display", "none");
@@ -881,7 +924,7 @@ export class Visual implements IVisual {
             .attr("dominant-baseline", "middle")
             .style("font-size", "14px")
             .style("fill", this.isHighContrast ? this.hcForeground : "#999999")
-            .text(this.localizationManager.getDisplayName("Visual_EmptyText"))
+            .text(this.localizationManager.getDisplayName(messageKey))
             .style("display", null);
     }
 
