@@ -1,120 +1,74 @@
 # Codex Zone Gauge
 
-## Overview
-A gauge visualization that displays a value within a range, divided into colored zones (e.g., danger, warning, success). Supports optional target and comparison markers, and multiple gauge types (semi-circle, three-quarter, arc).
+A single-reading gauge with six instruments: Pressure Dial, Speedometer,
+Tachometer, Progress Ring, Segmented Meter and Thermometer.
 
-## Features
-- Displays a value on an arc with configurable zones (typically three: danger, warning, success)
-- Zones can be solid colors or gradients
-- Optional zone callout labels (text inside, outside, or on the arc)
-- Optional target marker (line or marker) with label
-- Optional comparison marker (line or marker) for secondary value (e.g., previous period)
-- Value display options: arc (value shown on the arc), needle (tachometer-style), or both
-- Configurable gauge thickness, animation duration, border, and border color
-- Value formatting: number or percent, with decimal places
-- Label for the gauge (optional)
-- Tooltips showing value, target, comparison, and zone information on hover
-- Click to cross-filter other visuals by category (if bound)
-- Right-click context menu for cross-filtering and other interactions
-- High contrast mode support
-- Supports keyboard focus and screen readers
+## Data
 
-## Data Roles
-| Role | Display Name | Kind | Required? | Data Type | Description |
-|------|--------------|------|-----------|-----------|-------------|
-| category | Category | Grouping | No (max 1) | Text or Grouping | Optional grouping column. When bound, clicking the gauge filters other visuals by this category. |
-| value | Value | Measure | Yes (max 1) | Numeric | The primary value to display on the gauge |
-| target | Target | Measure | No (max 1) | Numeric | Target value shown as a marker on the arc |
-| comparison | Comparison | Measure | No (max 1) | Numeric | Optional secondary value (e.g. previous period) shown as a marker on the arc |
-| minimum | Minimum | Measure | No (max 1) | Numeric | Minimum value of the gauge range |
-| maximum | Maximum | Measure | No (max 1) | Numeric | Maximum value of the gauge range |
+Bind one numeric **Value** measure. Optional wells are **Target**, **Comparison**,
+**Minimum**, **Maximum**, and one **Category** for selection and tooltip context.
+The first delivered category row is used; the visual does not aggregate rows itself.
+Missing, blank, nonnumeric and non-finite readings are not asserted as zero.
 
-Note: The Value role is required. Minimum and Maximum roles, if not bound, are auto-calculated from the value and target/comparison values.
+Bound scale endpoints are used as delivered. Unbound endpoints are derived from
+Value, Target and Comparison, rounded outward to a countable step. All-nonnegative
+data starts at zero. Minimum must be below Maximum; invalid bounds show validation.
+Numeric readouts and tooltips preserve the actual reading outside the scale.
+Needles and fills clamp to the drawable range; tooltips disclose overflow.
 
-## Formatting Options
-The visual provides the following format pane cards:
+## Instruments And Zones
 
-### Title Settings
-- Show Title: Toggle visibility of the visual title
-- Title Text: Custom title text
-- Font Family, Font Size, Bold, Italic, Underline
-- Alignment (left, center, right)
-- Font Color
+Threshold banding uses Zone 1 End and Zone 2 End, with selectable higher-is-better
+or lower-is-better direction. Target-relative banding requires Target and uses
+symmetric on-target and warning tolerances. Boundaries belong to the better band.
+At a zero target, percentage tolerances are zero: only exact target is on target.
 
-### Gauge Settings
-- Gauge Type: Semi-circle, Three-quarter, or Arc (defines the arc angle)
-- Thickness: Thickness of the gauge arc in pixels
-- Animation Duration: Length of the animation in milliseconds (0 to disable)
-- Show Border: Toggle visibility of the outer border
-- Border Color: Color of the outer border
-- Border Width: Width of the outer border in pixels
+All instruments use the configured zone colours. Dials draw zone bands, the meter
+colours its LEDs by position, and the thermometer/ring use the current state.
+An explicit Ring Colour overrides the value arc. Needle and readout overrides
+remain independent. Match Needle Colour links the readout to the needle/state.
 
-### Zones
-- Zone 1 End: Value at which zone 1 (danger) ends and zone 2 (warning) begins
-- Zone 2 End: Value at which zone 2 (warning) ends and zone 3 (success) begins
-- Zone 1 Color (Danger): Fill color for zone 1
-- Zone 2 Color (Warning): Fill color for zone 2
-- Zone 3 Color (Success): Fill color for zone 3
-- Use Gradient Zone Fills: Toggle gradient fill for zones (if disabled, solid colors are used)
-- Show Zone Callouts: Toggle visibility of zone labels
-- Callout Position: On the arc band, Outside the outer edge, or Inside the inner edge
-- Zone 1 Callout: Text label for zone 1
-- Zone 2 Callout: Text label for zone 2
-- Zone 3 Callout: Text label for zone 3
-- Callout Font Size: Font size for zone callout labels in pixels
+Progress Ring shows Value / Target as a percentage, or Value / Maximum when
+Target is missing or zero. It is not progress through Minimum-Maximum. Show Target
+only controls marker visibility, not this arithmetic. Decimal Places controls
+the derived percentage. Value Arc Hidden retains a visible full-width ring for
+compatibility; Thin Band explicitly selects the narrow ring.
 
-### Comparison
-- Show Comparison Marker: Toggle visibility of the comparison marker
-- Comparison Style: Line or Marker (visual style of the comparison indicator)
-- Comparison Color: Color of the comparison marker
-- Comparison Label: Text label for the comparison marker
+Target and Comparison are tick markers in every style. Their visibility does not
+change scale derivation. Comparison is dashed on the dials and ring.
 
-### Target Settings
-- Show Target: Toggle visibility of the target marker
-- Target Style: Line, Marker, or None (visual style of the target indicator)
-- Target Color: Color of the target marker
+## Formatting
 
-### Value Display
-- Value Style: Arc, Needle, or Both (how to represent the value)
-- Needle Color: Color of the needle (when Value Style is Needle or Both)
-- Show Value: Toggle visibility of the value text
-- Value Format: Number or Percent (for the value text)
-- Decimal Places: Number of decimal places to display (0-6)
-- Value Color: Text color of the value text
-- Value Font Size: Font size of the value text in pixels
-- Show Label: Toggle visibility of the label text (below the value)
-- Label Color: Text color of the label text
-- Label Font Size: Font size of the label text in pixels
+- Gauge Style selects the instrument, with Segments for the meter and Dial Face
+  for Speedometer/Tachometer.
+- Title supplies text, alignment, font and colour.
+- Zones supplies banding, direction, tolerance, thresholds and colours.
+- Target and Comparison supply marker visibility and colour.
+- Value Display supplies value/label visibility, font controls, colour overrides
+  and Decimal Places. Untouched precision uses the measure format; explicitly
+  saved Decimal Places overrides it, including a value equal to the default.
+- Value Format Percent on a plain number denotes already-scaled percent points.
+  A percent model format denotes a fraction and is scaled by 100. Progress Ring
+  always shows derived completion and hides this inapplicable selector.
+- Background supplies fill and transparency; Border and Corner Accents supply
+  the surrounding chrome.
 
-## How to Use
-1. Import the `.pbiviz` file into Power BI Desktop (from the Visuals pane -> ... -> Import from file).
-2. Locate the visual in the Visualizations pane and add it to the report canvas.
-3. Bind data to the data roles:
-   - **Value**: Required numeric measure for the primary value
-   - **Optional**: Category (for grouping and cross-filtering)
-   - **Optional**: Target numeric measure for the target marker
-   - **Optional**: Comparison numeric measure for the comparison marker
-   - **Optional**: Minimum numeric measure for the gauge minimum (if not bound, auto-calculated)
-   - **Optional**: Maximum numeric measure for the gauge maximum (if not bound, auto-calculated)
-4. Use the format pane to adjust appearance:
-   - Set gauge type, thickness, animation, and border
-   - Configure zone boundaries, colors, gradient, and callouts
-   - Set target and comparison markers (style, color, label)
-   - Choose value display style, formatting, and label
-5. Interact:
-   - Click the gauge to cross-filter other visuals by the category (if bound)
-   - Hover to see a tooltip with value, target, comparison, and zone
-   - Right-click for the context menu
+Tooltips use each measure's own model format. The shared formatter supports common
+numeric, percent and currency patterns; accounting negative-section parentheses
+remain a known shared-formatting limitation.
 
-## Limitations
-- The visual expects numeric values for Value, Target, Comparison, Minimum, and Maximum. Non-numeric values are treated as zero.
-- If Value is not bound or contains no valid numeric data, the visual displays an empty state.
-- Minimum and Maximum, if not bound, are derived from the data: the scale is rounded out to a countable step that contains Value, Target and Comparison, and starts at 0 whenever all of them are non-negative. The largest reading always sits below the top of the scale rather than on it. Binding either well pins that end exactly as given and only the other end is derived.
-- Zone 1 End and Zone 2 End must be numeric and within the gauge range (min to max); if not, they are clamped.
-- Each data role accepts only one field.
-- The visual uses a data reduction algorithm (top 30,000 rows) which may limit the number of rows displayed (only the first row is used for the gauge).
-- The visual does not support drill-through or bookmark selection.
-- In high contrast mode, colors are forced to foreground/background for accessibility.
+Retired Gauge Type, Thickness, Animation, Value Style, marker-style and zone-callout
+controls are not part of the current pane. Their capability entries remain for
+saved-report compatibility; retired instrument values fall back to Pressure Dial.
+
+## Interaction And Accessibility
+
+Category-bound gauges support click-to-select and keyboard activation. Host
+interaction permissions apply. Context menus and tooltips carry the current
+category identity. High contrast uses host foreground/background colours and
+exposes zone state in text. Automatic ink adapts to the composited palette
+background; an image or shape behind the visual may require explicit colours.
 
 ## Support
-For help or questions, visit https://nexuscodex.nexus/support
+
+https://nexuscodex.nexus/support

@@ -87,10 +87,7 @@ function niceStep(rough: number): number {
     return tidy(step * magnitude);
 }
 
-/** The declared default of the Value Display "Decimal Places" control. Must
- *  match settings.ts — it is the sentinel that says the author never touched
- *  the control, and an untouched control cannot outvote the measure's own
- *  format string. */
+/** Fallback precision when the model supplies none; explicit choices are detected in metadata. */
 const DECIMAL_PLACES_DEFAULT = 1;
 
 /** A model format string with its fraction section forced to `digits` places,
@@ -391,8 +388,16 @@ export class Visual implements IVisual {
             // formattingmodel populate does items.find() and old reports
             // would crash both the render and the pane build. Normalize to
             // the default entry (caught by the style-sweep legacy scenario).
-            const styleSlice = this.formattingSettings.gaugeStyleCard.style;
-            if (!styleSlice.value) styleSlice.value = styleSlice.items[0];
+            for (const slice of [
+                this.formattingSettings.gaugeStyleCard.style,
+                this.formattingSettings.gaugeStyleCard.dialFace,
+                this.formattingSettings.valueDisplayCard.valueFormat,
+                this.formattingSettings.valueArcCard.arcStyle,
+                this.formattingSettings.zonesCard.bandingMode,
+                this.formattingSettings.zonesCard.polarity,
+            ]) {
+                if (!slice.value) slice.value = slice.items[0];
+            }
 
             // v3 theme pick (01-18 Task 4, audit-board polish) — drives the
             // needle's theme-aware default fallback below. Scope guard: this

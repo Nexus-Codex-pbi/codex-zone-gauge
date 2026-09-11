@@ -164,7 +164,7 @@ function renderDial(ctx: GaugeRenderCtx, spec: DialSpec, redSpan: { f0: number; 
         const w = ctx.valueArc.style === "band" ? 4 : (spec.cfg.rOut - spec.cfg.rMajIn) + 4;
         g.append("path")
             .attr("d", arcPath(cx, cy, r, a0, a0 - span * vFrac))
-            .attr("fill", "none").attr("stroke", hc ? fg : ft.prog)
+            .attr("fill", "none").attr("stroke", hc ? fg : (ctx.valueArc.ringColor || activeZoneColor(ctx) || ft.prog))
             .attr("stroke-width", w).attr("stroke-linecap", "round")
             .attr("opacity", (ctx.valueArc.style === "overlay" ? 0.28 : 1) * alpha);
     }

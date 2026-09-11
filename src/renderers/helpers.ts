@@ -317,7 +317,7 @@ export const TNUM = '"tnum"';
 export function applyFont(sel: any, f: FontOpts, boardPx: number, fallbackWeight: string): void {
     sel.style("font-family", f.family || SEGOE)
         .style("font-size", `${(f.size && f.size > 0) ? f.size : boardPx}px`)
-        .style("font-weight", f.bold ? "700" : fallbackWeight)
+        .style("font-weight", f.bold ? "700" : "400")
         .style("font-style", f.italic ? "italic" : "normal")
         .style("text-decoration", f.underline ? "underline" : "none");
 }

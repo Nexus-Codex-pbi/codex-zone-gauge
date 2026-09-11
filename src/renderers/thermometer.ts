@@ -63,11 +63,12 @@ export function renderThermometer(ctx: GaugeRenderCtx): void {
 
     // Reading in the bulb (board) + big value beside the column
     if (ctx.showValue) {
-        g.append("text").attr("x", TX + TW / 2).attr("y", BULB_CY + 6).attr("text-anchor", "middle")
+        const bulbText = g.append("text").attr("x", TX + TW / 2).attr("y", BULB_CY + 6).attr("text-anchor", "middle")
             .attr("fill", hc ? bg : contrastInk(fill, "#000000", "#ffffff"))
             .style("font-family", SEGOE).style("font-size", "18px")
             .style("font-weight", "700").style("font-feature-settings", TNUM)
             .text(ctx.valueText);
+        applyFont(bulbText, ctx.valueFont, 18, "700");
         const vt = g.append("text").attr("x", 150).attr("y", 104).attr("text-anchor", "start")
             .attr("fill", hc ? fg : (ctx.valueColor
                 || (ctx.matchNeedleColor ? (ctx.needleColor ?? activeZoneColor(ctx)) : null)
