@@ -404,8 +404,8 @@ class ValueDisplayCard extends FormattingSettingsCard {
 
     showLabel = new formattingSettings.ToggleSwitch({
         name: "showLabel",
-        displayName: "Show Zone Label",
-        description: "Show zone label (e.g. Poor, Acceptable, Good) below value",
+        displayName: "Show Category Label",
+        description: "Show the bound category below the reading; zone state is also available in the tooltip",
         value: true
     });
 

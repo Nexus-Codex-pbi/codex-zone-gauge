@@ -239,7 +239,9 @@ export class Visual implements IVisual {
 
         // Context menu on right-click
         this.target.addEventListener("contextmenu", (e: MouseEvent) => {
-            this.selectionManager.showContextMenu({}, { x: e.clientX, y: e.clientY });
+            if (this.host.allowInteractions !== false) {
+                this.selectionManager.showContextMenu(this.currentSelectionId || {}, { x: e.clientX, y: e.clientY });
+            }
             e.preventDefault();
         });
 
@@ -250,7 +252,7 @@ export class Visual implements IVisual {
                     coordinates: [e.clientX, e.clientY],
                     isTouchEvent: false,
                     dataItems: this.currentTooltipItems,
-                    identities: []
+                    identities: this.currentSelectionId ? [this.currentSelectionId] : []
                 });
             }
         });
@@ -280,9 +282,22 @@ export class Visual implements IVisual {
 
         // Click-to-filter (1180.2.2.3 Filter Out)
         this.svg.on("click", (e: MouseEvent) => {
-            if (this.currentSelectionId) {
+            if (this.currentSelectionId && this.host.allowInteractions !== false) {
                 this.selectionManager.select(this.currentSelectionId, e.ctrlKey || e.metaKey);
                 e.stopPropagation();
+            }
+        });
+        this.svg.on("keydown", (e: KeyboardEvent) => {
+            if (this.currentSelectionId && this.host.allowInteractions !== false && (e.key === "Enter" || e.key === " ")) {
+                e.preventDefault();
+                e.stopPropagation();
+                this.selectionManager.select(this.currentSelectionId, e.ctrlKey || e.metaKey);
+            }
+            if (this.currentSelectionId && this.host.allowInteractions !== false
+                && (e.key === "ContextMenu" || (e.shiftKey && e.key === "F10"))) {
+                e.preventDefault();
+                const box = this.svg.node().getBoundingClientRect();
+                this.selectionManager.showContextMenu(this.currentSelectionId, { x: box.x + box.width / 2, y: box.y + box.height / 2 });
             }
         });
 
@@ -397,6 +412,8 @@ export class Visual implements IVisual {
                 background.transparency.value ?? 100,
                 colorPalette?.background?.value || "#ffffff");
             const theme: Theme = surfaceTone(this.surface);
+            this.svg.style("color", this.isHighContrast ? this.hcForeground
+                : contrastInk(this.surface, "#000000", "#ffffff"));
 
             const width = Math.max(0, Number.isFinite(options.viewport.width) ? options.viewport.width : 0);
             const height = Math.max(0, Number.isFinite(options.viewport.height) ? options.viewport.height : 0);
@@ -447,7 +464,8 @@ export class Visual implements IVisual {
                 this.gaugeGroup.style("display", "none");
                 this.currentTooltipItems = [];
                 this.currentSelectionId = null;
-                this.svg.attr("aria-label", "Visual too small");
+                this.svg.attr("aria-label", "Visual too small").attr("tabindex", null)
+                    .attr("role", "img").style("cursor", "default");
                 this.cornerSignature.elements.forEach(element => { element.style.display = "none"; });
                 this.eventService.renderingFinished(options);
                 return;
@@ -471,7 +489,10 @@ export class Visual implements IVisual {
 
             // Capture selection ID for click-to-filter (1180.2.2.3)
             this.currentSelectionId = parsed.selectionId;
-            this.svg.style("cursor", parsed.selectionId ? "pointer" : "default");
+            const interactive = !!parsed.selectionId && this.host.allowInteractions !== false;
+            this.svg.style("cursor", interactive ? "pointer" : "default")
+                .attr("tabindex", interactive ? 0 : null)
+                .attr("role", interactive ? "button" : "img");
 
             // NOTE — do NOT attach a dataViewWildcard selector to Zone 3 Colour or
             // Value Colour. That pattern is for per-DATAPOINT colours: one slice per
@@ -723,7 +744,7 @@ export class Visual implements IVisual {
                 const ctx: GaugeRenderCtx = {
                     group: this.altGroup.node() as SVGGElement,
                     defs: this.defs.node() as SVGDefsElement,
-                    width, height, titleHeight,
+                    width, height: height - (hcC ? 20 : 0), titleHeight,
                     theme, surface: this.surface, hc: hcC, hcFg: this.hcForeground, hcBg: this.hcBackground,
                     min: minVal, max: maxVal, value: currentVal, rawValue: rawVal,
                     target: parsed.target,
@@ -780,6 +801,13 @@ export class Visual implements IVisual {
                     case "segmentedMeter": renderSegmentedMeter(ctx); break;
                     case "thermometer": renderThermometer(ctx); break;
                 }
+                const zoneLabel = { success: "Healthy", warning: "Warning", danger: "Critical" }[activeZone.band];
+                if (hcC) {
+                    const stateText = this.altGroup.append("text").attr("class", "zone-state")
+                        .attr("x", width / 2).attr("y", height - 8).attr("text-anchor", "middle")
+                        .attr("fill", this.hcForeground).style("font-size", "12px").text(zoneLabel);
+                    fitLabel(stateText, width - 16);
+                }
                 this.previousValue = currentVal;
 
                 // The tooltip is the last place an out-of-range reading could be
@@ -800,6 +828,8 @@ export class Visual implements IVisual {
                 if (parsed.categoryLabel) this.currentTooltipItems.push({ displayName: "Category", value: parsed.categoryLabel });
                 if (parsed.target !== null) this.currentTooltipItems.push({ displayName: "Target", value: fmtOther(parsed.target, parsed.targetFormatString) });
                 if (parsed.comparison !== null) this.currentTooltipItems.push({ displayName: "Comparison", value: fmtOther(parsed.comparison, parsed.comparisonFormatString) });
+                this.currentTooltipItems.push({ displayName: "Zone", value: zoneLabel });
+                this.svg.attr("aria-label", this.currentTooltipItems.map(item => `${item.displayName}: ${item.value}`).join(". "));
 
                 this.eventService.renderingFinished(options);
                 return;
@@ -995,6 +1025,9 @@ export class Visual implements IVisual {
         this.previousValueAngle = null;
         this.previousValue = null;
         this.currentSelectionId = null;
+        this.svg.attr("tabindex", null).attr("role", "img")
+            .attr("aria-label", this.localizationManager.getDisplayName(messageKey))
+            .style("cursor", "default");
 
         this.gaugeGroup.attr("transform", `translate(${width / 2},${height / 2})`);
         this.emptyText
