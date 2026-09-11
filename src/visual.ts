@@ -87,6 +87,33 @@ function niceStep(rough: number): number {
     return tidy(step * magnitude);
 }
 
+/** The declared default of the Value Display "Decimal Places" control. Must
+ *  match settings.ts — it is the sentinel that says the author never touched
+ *  the control, and an untouched control cannot outvote the measure's own
+ *  format string. */
+const DECIMAL_PLACES_DEFAULT = 1;
+
+/** A model format string with its fraction section forced to `digits` places,
+ *  leaving everything that carries the UNIT — currency symbol, grouping, the
+ *  percent sign, every other section of a multi-section format — exactly where
+ *  the model put it. Rewriting the string (rather than re-implementing the
+ *  formatter with a digit argument) keeps the suite's single reading of a .NET
+ *  fraction section in shared/numberFormat, which is not ours to edit. */
+function withFractionDigits(format: string, digits: number): string {
+    const places = Math.max(0, Math.min(15, Math.round(digits) || 0));
+    const fraction = places > 0 ? "." + "0".repeat(places) : "";
+    return format.split(";").map(section => {
+        if (/\.[0#]+/.test(section)) return section.replace(/\.[0#]+/, fraction);
+        // No fraction section to replace: add one after the last digit
+        // placeholder, so "$#,##0" -> "$#,##0.00" and "0%" -> "0.00%".
+        let last = -1;
+        for (let i = 0; i < section.length; i++) {
+            if (section[i] === "0" || section[i] === "#") last = i;
+        }
+        return last < 0 ? section : section.slice(0, last + 1) + fraction + section.slice(last + 1);
+    }).join(";");
+}
+
 /** Decimals a tick label needs so two adjacent ticks cannot print the same
  *  text. One (the historic fixed rule) for every step of 0.1 or coarser, so no
  *  existing scale's labels move; more only where the step is finer than that. */
@@ -596,8 +623,31 @@ export class Visual implements IVisual {
                 const vfmt = valueCfg.valueFormat.value.value as string;
                 const vdec = valueCfg.decimalPlaces.value;
                 const modelCarriesUnit = modelIsPercent || (!!modelFmt && /[$£€¥]/.test(modelFmt));
+
+                // DECIMAL PLACES AND THE MODEL FORMAT ARE NOT RIVALS. The model
+                // format supplies the UNIT — the currency symbol, the percent,
+                // the grouping — and Decimal Places supplies the DIGIT COUNT.
+                // Round 1 handed the whole job to the model format whenever it
+                // carried a unit, which silently disabled a live pane control:
+                // set Decimal Places to 0 on a currency measure and the readout
+                // still printed $12,500.00. Both apply now, by rewriting the
+                // format's fraction section and letting the shared formatter
+                // read it — so there is still exactly ONE reading of a .NET
+                // fraction section in the suite (shared/numberFormat).
+                //
+                // An UNTOUCHED Decimal Places expresses nothing, so it takes
+                // the measure's own precision rather than overriding it with a
+                // default nobody chose (the D-16 sentinel idiom this visual
+                // already uses for Target/Comparison Colour, and §7's "
+                // distinguish unset defaults from explicit"). That is also what
+                // keeps a saved currency report rendering exactly as it does
+                // today: $12,500.00, not $12,500.0.
+                const decIsExplicit = vdec != null && vdec !== DECIMAL_PLACES_DEFAULT;
+                const unitFmt = modelCarriesUnit && decIsExplicit
+                    ? withFractionDigits(modelFmt, vdec)
+                    : modelFmt;
                 const fmtV = (n: number) => modelCarriesUnit
-                    ? formatModelNumber(n, modelFmt, this.host.locale)
+                    ? formatModelNumber(n, unitFmt, this.host.locale)
                     : (vfmt === "percent" ? n.toFixed(vdec) + "%" : n.toFixed(vdec));
 
                 const hcC = this.isHighContrast;
