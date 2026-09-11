@@ -5,7 +5,7 @@
 
 import {
     GaugeRenderCtx, galleryTokens, arcPath, clearGroup, fitTransform,
-    ensureGradients, progFill, applyFont, TNUM, SEGOE, activeZoneColor,
+    ensureGradients, progFill, applyFont, TNUM, SEGOE, activeZoneColor, polar,
 } from "./helpers";
 import { formatModelNumber } from "../shared/numberFormat";
 
@@ -70,6 +70,18 @@ export function renderProgressRing(ctx: GaugeRenderCtx): void {
             .style("filter", !hc ? `drop-shadow(0 0 8px ${zoneClr || t.prog})` : null);
         g.append("circle").attr("cx", cx).attr("cy", 24).attr("r", 6).attr("fill", arcStroke);
     }
+
+    const marker = (value: number, color: string, comparison: boolean) => {
+        const completion = Math.max(0, Math.min(1, value / denom));
+        const outer = polar(cx, cy, r + 11, 90 - 360 * completion);
+        const inner = polar(cx, cy, r - 11, 90 - 360 * completion);
+        g.append("line").attr("class", comparison ? "comparison-indicator" : "target-indicator")
+            .attr("x1", outer.x).attr("y1", outer.y).attr("x2", inner.x).attr("y2", inner.y)
+            .attr("stroke", hc ? fg : color).attr("stroke-width", comparison ? 2 : 3)
+            .attr("stroke-dasharray", comparison ? "3 2" : null);
+    };
+    if (ctx.showTarget && ctx.target != null) marker(ctx.target, ctx.targetColor || t.tgtc, false);
+    if (ctx.comparison != null) marker(ctx.comparison, ctx.comparisonColor || t.unit, true);
 
     if (ctx.showValue) {
         const vt = g.append("text").attr("x", cx).attr("y", 104).attr("text-anchor", "middle")

@@ -146,6 +146,15 @@ function renderDial(ctx: GaugeRenderCtx, spec: DialSpec, redSpan: { f0: number; 
         g.append("line").attr("x1", to.x).attr("y1", to.y).attr("x2", ti.x).attr("y2", ti.y)
             .attr("stroke", hc ? fg : (ctx.targetColor || ft.tgtc)).attr("stroke-width", 3).attr("stroke-linecap", "round");
     }
+    if (ctx.comparison != null) {
+        const angle = a0 - span * fraction(ctx, ctx.comparison);
+        const outer = polar(cx, cy, spec.cfg.rOut + 6, angle);
+        const inner = polar(cx, cy, spec.cfg.rMajIn - 4, angle);
+        g.append("line").attr("class", "comparison-indicator")
+            .attr("x1", outer.x).attr("y1", outer.y).attr("x2", inner.x).attr("y2", inner.y)
+            .attr("stroke", hc ? fg : (ctx.comparisonColor || ft.unit))
+            .attr("stroke-width", 2).attr("stroke-dasharray", "3 2");
+    }
 
     // Value Arc (GAUGE-03) — sweep from scale start to the value
     const vFrac = fraction(ctx, ctx.value);
