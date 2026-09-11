@@ -784,6 +784,12 @@ export class Visual implements IVisual {
                 // The tooltip is the last place an out-of-range reading could be
                 // recovered, so it reports the raw measure, never the clamp.
                 this.currentTooltipItems = [{ displayName: "Value", value: fmtV(rawVal) }];
+                if (rawVal < minVal || rawVal > maxVal) {
+                    this.currentTooltipItems.push({
+                        displayName: "Range",
+                        value: rawVal < minVal ? `Below minimum ${fmtV(minVal)}` : `Above maximum ${fmtV(maxVal)}`,
+                    });
+                }
                 if (parsed.categoryLabel) this.currentTooltipItems.push({ displayName: "Category", value: parsed.categoryLabel });
                 if (parsed.target !== null) this.currentTooltipItems.push({ displayName: "Target", value: fmtV(parsed.target) });
                 if (parsed.comparison !== null) this.currentTooltipItems.push({ displayName: "Comparison", value: fmtV(parsed.comparison) });
