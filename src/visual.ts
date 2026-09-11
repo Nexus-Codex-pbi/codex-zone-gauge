@@ -216,6 +216,29 @@ export class Visual implements IVisual {
     private licenseGate: LicenseGate;
 
     private lastUpdateOptions: VisualUpdateOptions | null = null;
+    private destroyed = false;
+
+    private readonly onContextMenu = (e: MouseEvent): void => {
+        if (this.host.allowInteractions !== false) {
+            this.selectionManager.showContextMenu(this.currentSelectionId || {}, { x: e.clientX, y: e.clientY });
+        }
+        e.preventDefault();
+    };
+
+    private readonly onMouseMove = (e: MouseEvent): void => {
+        if (this.currentTooltipItems.length > 0) {
+            this.tooltipService.show({
+                coordinates: [e.clientX, e.clientY],
+                isTouchEvent: false,
+                dataItems: this.currentTooltipItems,
+                identities: this.currentSelectionId ? [this.currentSelectionId] : [],
+            });
+        }
+    };
+
+    private readonly onMouseLeave = (): void => {
+        this.tooltipService.hide({ isTouchEvent: false, immediately: false });
+    };
 
 
     constructor(options: VisualConstructorOptions) {
@@ -237,28 +260,9 @@ export class Visual implements IVisual {
         this.localizationManager = options.host.createLocalizationManager();
         this.tooltipService = options.host.tooltipService;
 
-        // Context menu on right-click
-        this.target.addEventListener("contextmenu", (e: MouseEvent) => {
-            if (this.host.allowInteractions !== false) {
-                this.selectionManager.showContextMenu(this.currentSelectionId || {}, { x: e.clientX, y: e.clientY });
-            }
-            e.preventDefault();
-        });
-
-        // Tooltip on hover
-        this.target.addEventListener("mousemove", (e: MouseEvent) => {
-            if (this.currentTooltipItems.length > 0) {
-                this.tooltipService.show({
-                    coordinates: [e.clientX, e.clientY],
-                    isTouchEvent: false,
-                    dataItems: this.currentTooltipItems,
-                    identities: this.currentSelectionId ? [this.currentSelectionId] : []
-                });
-            }
-        });
-        this.target.addEventListener("mouseleave", () => {
-            this.tooltipService.hide({ isTouchEvent: false, immediately: false });
-        });
+        this.target.addEventListener("contextmenu", this.onContextMenu);
+        this.target.addEventListener("mousemove", this.onMouseMove);
+        this.target.addEventListener("mouseleave", this.onMouseLeave);
 
         // Root carries the suite chrome (Border card, Corner Accents): keep
         // the border inside the tile and anchor the absolutely-positioned
@@ -362,6 +366,7 @@ export class Visual implements IVisual {
     }
 
     public update(options: VisualUpdateOptions): void {
+        if (this.destroyed) return;
         this.eventService.renderingStarted(options);
         this.lastUpdateOptions = options;
 
@@ -1044,18 +1049,32 @@ export class Visual implements IVisual {
     }
 
     public destroy(): void {
+        if (this.destroyed) return;
         // Drop the in-flight licence check FIRST: its redraw callback replays
         // update() against a torn-down target otherwise (NEXUS lifecycle finding).
         this.licenseGate.dispose();
+        this.destroyed = true;
+        this.lastUpdateOptions = null;
+        this.currentTooltipItems = [];
+        this.tooltipService.hide({ isTouchEvent: false, immediately: true });
+        this.target.removeEventListener("contextmenu", this.onContextMenu);
+        this.target.removeEventListener("mousemove", this.onMouseMove);
+        this.target.removeEventListener("mouseleave", this.onMouseLeave);
+        this.cornerSignature?.destroy();
+        this.cornerSignature = null;
         // Clean up DOM refs and event listeners
         if (this.svg) {
-            this.svg.remove();
+            this.svg.on("click", null).on("keydown", null).remove();
         }
         this.target = null;
         this.svg = null;
         this.defs = null;
         this.titleEl = null;
         this.gaugeGroup = null;
+        this.altGroup = null;
+        this.zoneSegGroup = null;
+        this.needleHubInner = null;
+        this.backgroundRect = null;
         this.borderPath = null;
         this.zone1Path = null;
         this.zone2Path = null;
