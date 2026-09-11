@@ -426,7 +426,16 @@ export class Visual implements IVisual {
 
             const minVal = parsed.min;
             const maxVal = Math.max(parsed.max, minVal + 1); // prevent zero-range
-            const currentVal = clamp(parsed.value, minVal, maxVal);
+            // GEOMETRY vs READING (NEXUS cycle-15 §1). `currentVal` is clamped
+            // because a needle cannot point past the end of its own scale.
+            // `rawVal` is the measure as delivered and is what every NUMBER the
+            // reader sees comes from — readout, tooltip and the ring's
+            // completion arithmetic. Clamping the number instead of the pointer
+            // overwrote the evidence: 150 on a 0–100 scale reported "100.0"
+            // everywhere, including the tooltip, so the real reading could not
+            // be recovered at all; a negative on a 0–100 scale read "0.0".
+            const rawVal = parsed.value;
+            const currentVal = clamp(rawVal, minVal, maxVal);
 
             // Zone boundaries clamped to scale range
             const zone1End = clamp(zonesCfg.zone1End.value, minVal, maxVal);
@@ -531,10 +540,10 @@ export class Visual implements IVisual {
                     defs: this.defs.node() as SVGDefsElement,
                     width, height, titleHeight,
                     theme, hc: hcC, hcFg: this.hcForeground, hcBg: this.hcBackground,
-                    min: minVal, max: maxVal, value: currentVal,
+                    min: minVal, max: maxVal, value: currentVal, rawValue: rawVal,
                     target: tCfg.showTarget.value ? parsed.target : null,
                     comparison: cCfg.showComparison.value ? parsed.comparison : null,
-                    valueText: fmtV(currentVal),
+                    valueText: fmtV(rawVal),
                     unitText: parsed.categoryLabel || "",
                     showValue: !!valueCfg.showValue.value,
                     showUnit: !!valueCfg.showLabel.value,
@@ -585,7 +594,9 @@ export class Visual implements IVisual {
                 }
                 this.previousValue = currentVal;
 
-                this.currentTooltipItems = [{ displayName: "Value", value: fmtV(currentVal) }];
+                // The tooltip is the last place an out-of-range reading could be
+                // recovered, so it reports the raw measure, never the clamp.
+                this.currentTooltipItems = [{ displayName: "Value", value: fmtV(rawVal) }];
                 if (parsed.categoryLabel) this.currentTooltipItems.push({ displayName: "Category", value: parsed.categoryLabel });
                 if (parsed.target !== null) this.currentTooltipItems.push({ displayName: "Target", value: fmtV(parsed.target) });
                 if (parsed.comparison !== null) this.currentTooltipItems.push({ displayName: "Comparison", value: fmtV(parsed.comparison) });

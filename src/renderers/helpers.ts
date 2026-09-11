@@ -46,7 +46,17 @@ export interface GaugeRenderCtx {
     hcBg: string;
     min: number;
     max: number;
+    /** Value CLAMPED to [min,max] — geometry only (needle angle, fill fraction,
+     *  band lookup). Never render this as a number: a 150 on a 0–100 scale is
+     *  still a 150 and the reader must be able to see it. */
     value: number;
+    /** The measure AS DELIVERED, unclamped. Anything that is a READING —
+     *  the readout, the tooltip, the ring's completion arithmetic — uses this.
+     *  Clamping the needle is drawing; clamping the number is falsification
+     *  (NEXUS cycle-15 §1: 150 against a 0–100 scale displayed "100.0" in five
+     *  instruments and "100%" in the ring, and the tooltip agreed, so hovering
+     *  could not recover the real measurement). */
+    rawValue: number;
     target: number | null;
     comparison: number | null;
     valueText: string;           // formatted by the visual's existing formatter

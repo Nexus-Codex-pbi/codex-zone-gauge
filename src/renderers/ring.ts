@@ -18,8 +18,15 @@ export function renderProgressRing(ctx: GaugeRenderCtx): void {
 
     // Completion fraction: vs target when bound (the board's "of target"),
     // else vs the configured max.
+    //
+    // This reads the RAW measure, not the scale-clamped one. The ring is the one
+    // instrument that is already unbounded by design — it laps a second arc past
+    // 100% and captions the overrun — so feeding it a value clamped to `max`
+    // destroyed the very state it exists to show: 150 against target 100 on a
+    // 0–100 scale arrived as 100 and the ring read a flat "100%", no lap, no
+    // overrun caption (NEXUS cycle-15 §1).
     const denom = ctx.target != null && ctx.target !== 0 ? ctx.target : (ctx.max || 100);
-    const pv = denom !== 0 ? (ctx.value / denom) * 100 : 0;
+    const pv = denom !== 0 ? (ctx.rawValue / denom) * 100 : 0;
     const pf = Math.max(0, pv / 100);
 
     g.append("circle").attr("cx", cx).attr("cy", cy).attr("r", r)
