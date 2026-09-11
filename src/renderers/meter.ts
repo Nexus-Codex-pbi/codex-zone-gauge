@@ -7,7 +7,7 @@
 
 import {
     GaugeRenderCtx, galleryTokens, arcPath, polar, clearGroup, fitTransform,
-    fraction, applyFont, TNUM, SEGOE, activeZoneColor,
+    fraction, applyFont, TNUM, SEGOE, activeZoneColor, fitText, fitLabel,
 } from "./helpers";
 
 const A0 = 190, SPAN = 200, CX = 125, CY = 130, R = 94;
@@ -58,12 +58,14 @@ export function renderSegmentedMeter(ctx: GaugeRenderCtx): void {
             .style("font-feature-settings", TNUM)
             .text(ctx.valueText);
         applyFont(vt, ctx.valueFont, 30, "700");
+        fitText(vt, 180, 36);
         if (ctx.unitText && ctx.showUnit) {
             const ut = g.append("text").attr("x", CX).attr("y", 140).attr("text-anchor", "middle")
                 .attr("fill", hc ? fg : (ctx.unitColor || t.unit))
                 .style("letter-spacing", "0.08em")
                 .text(ctx.unitText);
             applyFont(ut, ctx.unitFont, 12, "600");
+            fitLabel(ut, 200);
         }
     }
 }

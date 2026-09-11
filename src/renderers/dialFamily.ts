@@ -7,7 +7,7 @@ import {
     GaugeRenderCtx, galleryTokens, dialTicks, arcPath, faceArcPath,
     needlePoints, needleTransform, polar, clearGroup, fitTransform,
     fraction, dangerSpans, zoneSpans, activeZoneColor, stateVsTarget, ensureGradients,
-    domeFill, hubFill, needleFill, applyFont, TNUM, DialCfg, SEGOE,
+    domeFill, hubFill, needleFill, applyFont, TNUM, DialCfg, SEGOE, scaleTicks, fitText, fitLabel,
 } from "./helpers";
 
 interface DialSpec {
@@ -23,12 +23,7 @@ interface DialSpec {
 }
 
 function labelsFor(ctx: GaugeRenderCtx, count: number): string[] {
-    const out: string[] = [];
-    for (let i = 0; i < count; i++) {
-        const v = ctx.min + (ctx.max - ctx.min) * (i / (count - 1));
-        out.push(ctx.scaleText(v, count));
-    }
-    return out;
+    return scaleTicks(ctx, count).map(v => ctx.scaleText(v, count));
 }
 
 /** Angular margin the face wedge needs past each scale end so the FIRST and LAST
@@ -121,7 +116,9 @@ function renderDial(ctx: GaugeRenderCtx, spec: DialSpec, redSpan: { f0: number; 
     }
 
     // Ticks + numbers
-    const cfg: DialCfg = { ...spec.cfg, labels: labelsFor(ctx, spec.cfg.majCount), redRanges: redRuns };
+    const values = scaleTicks(ctx, spec.cfg.majCount);
+    const cfg: DialCfg = { ...spec.cfg, majCount: values.length,
+        labels: labelsFor(ctx, spec.cfg.majCount), fractions: values.map(v => fraction(ctx, v)), redRanges: redRuns };
     const ticks = dialTicks(cx, cy, a0, span, cfg);
     for (const m of ticks.min) {
         g.append("line").attr("x1", m.x1).attr("y1", m.y1).attr("x2", m.x2).attr("y2", m.y2)
@@ -132,11 +129,13 @@ function renderDial(ctx: GaugeRenderCtx, spec: DialSpec, redSpan: { f0: number; 
             .attr("stroke", hc ? fg : (m.red ? ft.danger : ft.maj)).attr("stroke-width", 2.6).attr("stroke-linecap", "round");
     }
     for (const n of ticks.nums) {
-        g.append("text").attr("x", n.x).attr("y", n.y)
+        const text = g.append("text").attr("x", n.x).attr("y", n.y)
             .attr("text-anchor", "middle").attr("dominant-baseline", "central")
             .attr("fill", hc ? fg : (n.red ? ft.danger : ft.num))
             .style("font-family", SEGOE).style("font-size", "13px").style("font-weight", "600")
             .text(n.label);
+        const pitch = Math.min(...cfg.fractions.slice(1).map((f, i) => f - cfg.fractions[i]));
+        fitText(text, Math.max(8, 2 * spec.cfg.rNum * Math.sin(pitch * span * Math.PI / 360) - 3));
     }
 
     // Target tick (violet, per board tgt)
@@ -204,12 +203,14 @@ function renderDial(ctx: GaugeRenderCtx, spec: DialSpec, redSpan: { f0: number; 
             .style("font-feature-settings", TNUM)
             .text(ctx.valueText);
         applyFont(vt, ctx.valueFont, spec.valueSize, "700");
+        fitText(vt, spec.face ? 86 : 110, 34);
         if (ctx.unitText && ctx.showUnit) {
             const ut = g.append("text").attr("x", cx).attr("y", spec.unitY).attr("text-anchor", "middle")
                 .attr("fill", hc ? fg : (ctx.unitColor || t.unit))
                 .style("letter-spacing", "0.08em")
                 .text(ctx.unitText);
             applyFont(ut, ctx.unitFont, 12, "600");
+            fitLabel(ut, spec.designW - 30);
         }
     }
 }
@@ -217,14 +218,14 @@ function renderDial(ctx: GaugeRenderCtx, spec: DialSpec, redSpan: { f0: number; 
 /** Pressure Dial — 270° sweep, red band from the danger zone. (board g1) */
 export function renderPressureDial(ctx: GaugeRenderCtx): void {
     renderDial(ctx, {
-        designW: 240, designH: 214, cx: 120, cy: 118, a0: 225, span: 270,
+        designW: 240, designH: 232, cx: 120, cy: 118, a0: 225, span: 270,
         // rNum pulled 70 -> 60: on a 270° sweep the first and last labels (0 and
         // 100) land at the dial's open bottom lip, and at r70 they sat level with
         // the arc ends and the value readout, reading as spilling OUT of the bowl
         // rather than sitting in it. r60 tucks both ends inside the band.
         // valueY nudged down so the readout clears that same bottom label pair.
         cfg: { rOut: 98, rMajIn: 84, rMinIn: 90, rNum: 60, majCount: 11, minorPer: 1, labels: [] },
-        face: false, needleLen: 86, bandR: 101, valueY: 176, unitY: 194, valueSize: 30,
+        face: false, needleLen: 86, bandR: 101, valueY: 198, unitY: 218, valueSize: 30,
     }, null, null);
 }
 
@@ -234,9 +235,9 @@ export function renderSpeedometer(ctx: GaugeRenderCtx): void {
     const st = stateVsTarget(ctx.value, ctx.target, ctx.lowerIsBetter);
     const clr = st === "succ" ? t.sg : st === "warn" ? t.sa : st === "dang" ? t.sm : null;
     renderDial(ctx, {
-        designW: 250, designH: 200, cx: 125, cy: 122, a0: 210, span: 240,
+        designW: 250, designH: 224, cx: 125, cy: 122, a0: 210, span: 240,
         cfg: { rOut: 104, rMajIn: 88, rMinIn: 95, rNum: 74, majCount: 7, minorPer: 3, labels: [] },
-        face: true, needleLen: 92, bandR: 104, valueY: 169, unitY: 196, valueSize: 22,
+        face: true, needleLen: 92, bandR: 104, valueY: 188, unitY: 210, valueSize: 22,
     }, null, clr);
 }
 

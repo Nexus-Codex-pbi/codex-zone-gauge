@@ -32,7 +32,7 @@ import { surfaceTokens } from "./shared/designTokens";
 import { makeCornerBrackets, CardSignatureHandle } from "./shared/cardSignature";
 import { applyCardSignature } from "./shared/cardSignatureSettings";
 import { applyBorder } from "./shared/borderSettings";
-import { GaugeRenderCtx, GaugeZone } from "./renderers/helpers";
+import { GaugeRenderCtx, GaugeZone, fitLabel, fitText } from "./renderers/helpers";
 import { renderPressureDial, renderSpeedometer, renderTachometer } from "./renderers/dialFamily";
 import { renderProgressRing } from "./renderers/ring";
 import { renderSegmentedMeter } from "./renderers/meter";
@@ -405,8 +405,8 @@ export class Visual implements IVisual {
             // dome/face/hub/six-style rebuild (Phase 3, GAUGE-02/03).
             const theme: Theme = themeFor(this.formattingSettings.background.backgroundColor.value?.value ?? "#ffffff");
 
-            const width = options.viewport.width;
-            const height = options.viewport.height;
+            const width = Math.max(0, Number.isFinite(options.viewport.width) ? options.viewport.width : 0);
+            const height = Math.max(0, Number.isFinite(options.viewport.height) ? options.viewport.height : 0);
 
             this.svg.attr("width", width).attr("height", height);
 
@@ -448,6 +448,17 @@ export class Visual implements IVisual {
                 glowMix: this.isHighContrast ? 0 : (theme === "dark" ? 55 : 0),
                 muted: false,
             });
+            if (width < 80 || height < 60) {
+                this.titleEl.style("display", "none");
+                this.altGroup.style("display", "none").selectAll("*").remove();
+                this.gaugeGroup.style("display", "none");
+                this.currentTooltipItems = [];
+                this.currentSelectionId = null;
+                this.svg.attr("aria-label", "Visual too small");
+                this.cornerSignature.elements.forEach(element => { element.style.display = "none"; });
+                this.eventService.renderingFinished(options);
+                return;
+            }
 
             // ── Parse data ──────────────────────────────────────────────
             const parsed = this.parseData(dataView);
@@ -515,6 +526,7 @@ export class Visual implements IVisual {
                     .style("fill", this.isHighContrast ? this.hcForeground : adaptiveTitle)
                     .text(titleCfg.titleText.value)
                     .style("display", null);
+                fitLabel(this.titleEl, Math.max(1, width - 16));
             } else {
                 this.titleEl.style("display", "none");
             }
@@ -1001,6 +1013,7 @@ export class Visual implements IVisual {
             .style("fill", this.isHighContrast ? this.hcForeground : "#999999")
             .text(this.localizationManager.getDisplayName(messageKey))
             .style("display", null);
+        fitText(this.emptyText, Math.max(1, width - 16), Math.max(1, height - 16));
     }
 
     public destroy(): void {

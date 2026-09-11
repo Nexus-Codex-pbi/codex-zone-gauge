@@ -5,7 +5,7 @@
 
 import {
     GaugeRenderCtx, galleryTokens, arcPath, clearGroup, fitTransform,
-    ensureGradients, progFill, applyFont, TNUM, SEGOE, activeZoneColor, polar,
+    ensureGradients, progFill, applyFont, TNUM, SEGOE, activeZoneColor, polar, fitText, fitLabel,
 } from "./helpers";
 import { formatModelNumber } from "../shared/numberFormat";
 
@@ -91,11 +91,13 @@ export function renderProgressRing(ctx: GaugeRenderCtx): void {
             .style("font-feature-settings", TNUM)
             .text(percent(pv));
         applyFont(vt, ctx.valueFont, 40, "700");
+        fitText(vt, 144, 48);
         if (ctx.showUnit) {
             const ut = g.append("text").attr("x", cx).attr("y", 130).attr("text-anchor", "middle")
                 .attr("fill", hc ? fg : (ctx.unitColor || (pv > 100 ? zoneClr : null) || t.unit))
                 .text(pv > 100 ? `+${percent(pv - 100)} over ${denominatorLabel}` : (ctx.unitText || `of ${denominatorLabel}`));
             applyFont(ut, ctx.unitFont, 12, pv > 100 ? "700" : "600");
+            fitLabel(ut, 150);
         }
     }
 }

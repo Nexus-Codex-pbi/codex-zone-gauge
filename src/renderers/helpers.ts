@@ -11,6 +11,7 @@
 
 import { select, Selection } from "d3-selection";
 import { Theme } from "../shared/bandEngine";
+import { scaleLinear } from "d3-scale";
 
 export interface GaugeZone {
     from: number;   // domain value
@@ -158,6 +159,7 @@ export interface DialCfg {
     rOut: number; rMajIn: number; rMinIn: number; rNum: number;
     majCount: number; minorPer?: number;
     labels: string[]; redFrom?: number; redTo?: number;
+    fractions?: number[];
     // Target-relative banding has two danger runs, so tick colouring needs the
     // full set rather than a single from/to pair. redFrom/redTo stay for the
     // threshold model's single run.
@@ -174,7 +176,7 @@ export function dialTicks(cx: number, cy: number, a0: number, span: number, cfg:
     const maj: DialTicks["maj"] = [], min: DialTicks["min"] = [], nums: DialTicks["nums"] = [];
     const mc = cfg.majCount, mp = cfg.minorPer || 0;
     for (let i = 0; i < mc; i++) {
-        const f = i / (mc - 1), a = a0 - span * f;
+        const f = cfg.fractions?.[i] ?? i / (mc - 1), a = a0 - span * f;
         const red = cfg.redRanges?.length
             ? cfg.redRanges.some(r => f >= r.f0 - 1e-6 && f <= r.f1 + 1e-6)
             : (cfg.redFrom != null && f >= cfg.redFrom - 1e-6 && f <= (cfg.redTo ?? 1) + 1e-6);
@@ -183,7 +185,9 @@ export function dialTicks(cx: number, cy: number, a0: number, span: number, cfg:
         nums.push({ x: np.x, y: np.y, label: cfg.labels[i], red });
     }
     for (let g = 0; g < mc - 1; g++) for (let k = 1; k <= mp; k++) {
-        const f = (g + k / (mp + 1)) / (mc - 1), a = a0 - span * f;
+        const from = cfg.fractions?.[g] ?? g / (mc - 1);
+        const to = cfg.fractions?.[g + 1] ?? (g + 1) / (mc - 1);
+        const f = from + (to - from) * k / (mp + 1), a = a0 - span * f;
         const o = polar(cx, cy, cfg.rOut, a), ip = polar(cx, cy, cfg.rMinIn, a);
         min.push({ x1: o.x, y1: o.y, x2: ip.x, y2: ip.y });
     }
@@ -235,14 +239,44 @@ export function clearGroup(g: SVGGElement): Selection<SVGGElement, unknown, null
  * read as "too zoomed in" and collided with the corner-accent brackets).
  * Margin ≈7% of the smaller tile side, floor 12px. */
 export function fitTransform(ctx: GaugeRenderCtx, designW: number, designH: number): string {
-    const availH = Math.max(10, ctx.height - ctx.titleHeight);
-    const m = Math.max(12, Math.min(ctx.width, availH) * 0.07);
-    const iw = Math.max(10, ctx.width - 2 * m);
-    const ih = Math.max(10, availH - 2 * m);
+    const availH = Math.max(0, ctx.height - ctx.titleHeight);
+    const m = Math.min(Math.min(ctx.width, availH) / 4, Math.max(12, Math.min(ctx.width, availH) * 0.07));
+    const iw = Math.max(0, ctx.width - 2 * m);
+    const ih = Math.max(0, availH - 2 * m);
     const s = Math.min(iw / designW, ih / designH);
     const tx = (ctx.width - designW * s) / 2;
     const ty = ctx.titleHeight + (availH - designH * s) / 2;
     return `translate(${tx.toFixed(2)},${ty.toFixed(2)}) scale(${s.toFixed(4)})`;
+}
+
+/** Keep endpoints exact; D3 chooses the countable interior scale ticks. */
+export function scaleTicks(ctx: GaugeRenderCtx, count: number): number[] {
+    const interior = scaleLinear().domain([ctx.min, ctx.max]).ticks(count - 1)
+        .filter(v => v > ctx.min && v < ctx.max);
+    return [ctx.min, ...interior, ctx.max];
+}
+
+export function fitText(sel: any, width: number, height = Infinity): void {
+    const node = sel.node() as SVGTextElement;
+    const box = node.getBBox();
+    const factor = Math.min(1, width / Math.max(1, box.width), height / Math.max(1, box.height));
+    if (factor < 1) sel.style("font-size", `${parseFloat(sel.style("font-size")) * factor * 0.98}px`);
+}
+
+export function fitLabel(sel: any, width: number): void {
+    const full = sel.text();
+    sel.attr("aria-label", full).attr("data-full-text", full).style("letter-spacing", "0");
+    const node = sel.node() as SVGTextElement;
+    if (node.getComputedTextLength() <= width) return;
+    let low = 0, high = full.length;
+    while (low < high) {
+        const mid = Math.ceil((low + high) / 2);
+        sel.text(full.slice(0, mid) + "...");
+        if (node.getComputedTextLength() <= width) low = mid;
+        else high = mid - 1;
+    }
+    sel.text(full.slice(0, low) + "...");
+    fitText(sel, width);
 }
 
 export function fraction(ctx: GaugeRenderCtx, v: number): number {

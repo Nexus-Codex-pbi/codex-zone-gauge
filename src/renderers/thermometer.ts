@@ -7,7 +7,7 @@
 
 import {
     GaugeRenderCtx, galleryTokens, clearGroup, fitTransform, fraction,
-    ensureGradients, thermFill, applyFont, TNUM, SEGOE, activeZoneColor,
+    ensureGradients, thermFill, applyFont, TNUM, SEGOE, activeZoneColor, fitText, fitLabel,
 } from "./helpers";
 import { contrastInk } from "../shared/colorHelpers";
 
@@ -45,11 +45,12 @@ export function renderThermometer(ctx: GaugeRenderCtx): void {
         const v = ctx.min + (ctx.max - ctx.min) * (i / 4);
         g.append("line").attr("x1", TX + TW + 6).attr("y1", y).attr("x2", TX + TW + 14).attr("y2", y)
             .attr("stroke", hc ? fg : t.tick).attr("stroke-width", 2);
-        g.append("text").attr("x", TX + TW + 20).attr("y", y)
+        const tickText = g.append("text").attr("x", TX + TW + 20).attr("y", y)
             .attr("text-anchor", "start").attr("dominant-baseline", "central")
             .attr("fill", hc ? fg : t.unit)
             .style("font-family", SEGOE).style("font-size", "12px").style("font-weight", "600")
             .text(ctx.scaleText(v, 5));
+        fitText(tickText, 56, 18);
     }
 
     // Target / comparison tick marks across the track
@@ -69,6 +70,8 @@ export function renderThermometer(ctx: GaugeRenderCtx): void {
             .style("font-weight", "700").style("font-feature-settings", TNUM)
             .text(ctx.valueText);
         applyFont(bulbText, ctx.valueFont, 18, "700");
+        const bulbBox = bulbText.node().getBBox();
+        if (bulbBox.width > 28 || bulbBox.height > 26) bulbText.remove();
         const vt = g.append("text").attr("x", 150).attr("y", 104).attr("text-anchor", "start")
             .attr("fill", hc ? fg : (ctx.valueColor
                 || (ctx.matchNeedleColor ? (ctx.needleColor ?? activeZoneColor(ctx)) : null)
@@ -76,12 +79,14 @@ export function renderThermometer(ctx: GaugeRenderCtx): void {
             .style("font-feature-settings", TNUM)
             .text(ctx.valueText);
         applyFont(vt, ctx.valueFont, 30, "700");
+        fitText(vt, 78, 34);
         if (ctx.unitText && ctx.showUnit) {
             const ut = g.append("text").attr("x", 150).attr("y", 124).attr("text-anchor", "start")
                 .attr("fill", hc ? fg : (ctx.unitColor || t.unit))
                 .style("letter-spacing", "0.08em")
                 .text(ctx.unitText);
             applyFont(ut, ctx.unitFont, 12, "600");
+            fitLabel(ut, 78);
         }
     }
 }
