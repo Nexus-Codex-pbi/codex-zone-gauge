@@ -26,6 +26,7 @@ import { VisualFormattingSettingsModel, textAlignFor } from "./settings";
 import { clamp, CODEX_TOKENS } from "./utils";
 
 import { toRgba } from "./shared/colorHelpers";
+import { formatModelNumber } from "./shared/numberFormat";
 import { Theme, accentToken, targetToken } from "./shared/bandEngine";
 import { surfaceTokens } from "./shared/designTokens";
 import { makeCornerBrackets, CardSignatureHandle } from "./shared/cardSignature";
@@ -77,6 +78,10 @@ interface ParsedData {
     comparison: number | null;
     min: number;
     max: number;
+    /** The Value column's MODEL format string ("0.0%", "$#,##0.00", …), as the
+     *  host delivered it. Null when the measure carries none. It is the only
+     *  thing that says what UNIT the number is in — see the readout formatter. */
+    valueFormatString: string | null;
     categoryLabel: string | null;
     selectionId: ISelectionId | null;
 }
@@ -460,9 +465,34 @@ export class Visual implements IVisual {
                 this.gaugeGroup.style("display", "none");
                 this.altGroup.style("display", null);
 
+                // ── Readout formatting (NEXUS cycle-15 §6) ──────────────────
+                // Value Format + Decimal Places stay authoritative for the
+                // DIGITS. What the pane cannot express is the measure's UNIT,
+                // and that is exactly what the model format string carries:
+                //
+                //   "0.0%"      the stored number is a FRACTION of one, so 0.78
+                //               IS 78%. Appending "%" to it printed "0.8%" and
+                //               restated a 78% reading as under one percent.
+                //   "$#,##0.00" the number is money. Printing "12500.0" dropped
+                //               both the currency symbol and the grouping.
+                //
+                // So a model format that carries a unit wins, and everything
+                // else — the ordinary numeric formats, and measures with no
+                // format at all — keeps the existing pane-driven path verbatim,
+                // which is what leaves saved reports rendering as they did.
+                // The string is read by the shared formatter so the suite keeps
+                // ONE reading of a .NET fraction section (shared/numberFormat).
+                //
+                // Read eagerly: an unsupported persisted Value Format resolves
+                // to undefined here and must still throw into renderingFailed
+                // rather than being silently normalised.
                 const vfmt = valueCfg.valueFormat.value.value as string;
                 const vdec = valueCfg.decimalPlaces.value;
-                const fmtV = (n: number) => vfmt === "percent" ? n.toFixed(vdec) + "%" : n.toFixed(vdec);
+                const modelFmt = parsed.valueFormatString;
+                const modelCarriesUnit = !!modelFmt && (modelFmt.indexOf("%") >= 0 || /[$£€¥]/.test(modelFmt));
+                const fmtV = (n: number) => modelCarriesUnit
+                    ? formatModelNumber(n, modelFmt, this.host.locale)
+                    : (vfmt === "percent" ? n.toFixed(vdec) + "%" : n.toFixed(vdec));
 
                 const hcC = this.isHighContrast;
                 const dangerClr  = hcC ? this.hcForeground : zonesCfg.zone1Color.value.value;
@@ -688,6 +718,7 @@ export class Visual implements IVisual {
         let comparison: number | null = null;
         let min: number | null = null;
         let max: number | null = null;
+        let valueFormatString: string | null = null;
 
         for (let i = 0; i < columns.length; i++) {
             const roles = columns[i].source.roles;
@@ -695,6 +726,7 @@ export class Visual implements IVisual {
 
             if (roles && roles["value"]) {
                 value = this.toNum(raw);
+                valueFormatString = columns[i].source.format || null;
             }
             if (roles && roles["target"]) {
                 target = this.toNum(raw);
@@ -735,16 +767,31 @@ export class Visual implements IVisual {
             comparison,
             min: min ?? 0,
             max: max ?? 100,
+            valueFormatString,
             categoryLabel,
             selectionId
         };
     }
 
-    /** Safely coerce to number */
+    /** Coerce a delivered cell to a READING — or null when there is no reading.
+     *
+     *  MISSING IS NOT ZERO. `Number("")` and `Number("   ")` are both 0, so a
+     *  blank or whitespace cell used to be asserted as a real measurement: the
+     *  gauge drew a needle at the bottom of the scale and printed "0.0" for a
+     *  row that carried nothing (NEXUS cycle-15 §6). A blank now takes the same
+     *  empty-state path that null and non-numeric text already took.
+     *
+     *  A READING HAS TO BE FINITE. `Number("Infinity")` is not NaN, so the old
+     *  isNaN guard let non-finite values through: an infinite minimum produced
+     *  NaN tick labels and NaN path geometry, and because nothing threw, no
+     *  rendering-failed event was raised either — the tile just showed nonsense.
+     *  isFinite() rejects NaN and ±Infinity together.
+     */
     private toNum(raw: any): number | null {
         if (raw == null) return null;
+        if (typeof raw === "string" && raw.trim() === "") return null;
         const n = Number(raw);
-        return isNaN(n) ? null : n;
+        return isFinite(n) ? n : null;
     }
 
     /** Empty state */
