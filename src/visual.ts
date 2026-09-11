@@ -514,6 +514,17 @@ export class Visual implements IVisual {
                 return;
             }
 
+            // The measure's MODEL format string is the only thing that says what
+            // unit these numbers are in, and the AXIS needs that as much as the
+            // readout does (the readout formatter below reads the same two
+            // consts). A percent format means Power BI is storing a fraction of
+            // one: the reading 0.78 IS 78%, and round 1 made the readout say so
+            // — but the scale under it still counted 0 … 1, so the tile showed
+            // "78.0%" against an axis whose top was "1" (NEXUS cycle-15 §6, the
+            // fraction/points confusion). Ticks now speak the readout's unit.
+            const modelFmt = parsed.valueFormatString;
+            const modelIsPercent = !!modelFmt && modelFmt.indexOf("%") >= 0;
+
             // Tick-label precision follows the SPAN. One decimal (the previous
             // fixed rule) prints "0 0.1 0.1 0.2 0.2" on a 0–0.5 scale now that
             // sub-unit domains render at their real extent — the same label
@@ -521,10 +532,11 @@ export class Visual implements IVisual {
             // step finer than 0.1 needs them, so every scale that worked before
             // is formatted character-for-character as it was.
             const fmtScale = (v: number, tickCount: number): string => {
-                const step = tickCount > 1 ? Math.abs(maxVal - minVal) / (tickCount - 1) : Math.abs(maxVal - minVal);
-                const digits = scaleDigits(step);
-                const unit = Math.pow(10, digits);
-                return String(Math.round(v * unit) / unit);
+                const scale = modelIsPercent ? 100 : 1;
+                const step = (tickCount > 1 ? Math.abs(maxVal - minVal) / (tickCount - 1) : Math.abs(maxVal - minVal)) * scale;
+                const unit = Math.pow(10, scaleDigits(step));
+                const shown = Math.round(v * scale * unit) / unit;
+                return modelIsPercent ? `${shown}%` : String(shown);
             };
             // GEOMETRY vs READING (NEXUS cycle-15 §1). `currentVal` is clamped
             // because a needle cannot point past the end of its own scale.
@@ -583,8 +595,7 @@ export class Visual implements IVisual {
                 // rather than being silently normalised.
                 const vfmt = valueCfg.valueFormat.value.value as string;
                 const vdec = valueCfg.decimalPlaces.value;
-                const modelFmt = parsed.valueFormatString;
-                const modelCarriesUnit = !!modelFmt && (modelFmt.indexOf("%") >= 0 || /[$£€¥]/.test(modelFmt));
+                const modelCarriesUnit = modelIsPercent || (!!modelFmt && /[$£€¥]/.test(modelFmt));
                 const fmtV = (n: number) => modelCarriesUnit
                     ? formatModelNumber(n, modelFmt, this.host.locale)
                     : (vfmt === "percent" ? n.toFixed(vdec) + "%" : n.toFixed(vdec));
