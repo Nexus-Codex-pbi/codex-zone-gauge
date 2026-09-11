@@ -219,7 +219,7 @@ export class Visual implements IVisual {
     private destroyed = false;
 
     private readonly onContextMenu = (e: MouseEvent): void => {
-        if (this.host.allowInteractions !== false) {
+        if (this.host.hostCapabilities?.allowInteractions !== false) {
             this.selectionManager.showContextMenu(this.currentSelectionId || {}, { x: e.clientX, y: e.clientY });
         }
         e.preventDefault();
@@ -287,18 +287,18 @@ export class Visual implements IVisual {
 
         // Click-to-filter (1180.2.2.3 Filter Out)
         this.svg.on("click", (e: MouseEvent) => {
-            if (this.currentSelectionId && this.host.allowInteractions !== false) {
+            if (this.currentSelectionId && this.host.hostCapabilities?.allowInteractions !== false) {
                 this.selectionManager.select(this.currentSelectionId, e.ctrlKey || e.metaKey);
                 e.stopPropagation();
             }
         });
         this.svg.on("keydown", (e: KeyboardEvent) => {
-            if (this.currentSelectionId && this.host.allowInteractions !== false && (e.key === "Enter" || e.key === " ")) {
+            if (this.currentSelectionId && this.host.hostCapabilities?.allowInteractions !== false && (e.key === "Enter" || e.key === " ")) {
                 e.preventDefault();
                 e.stopPropagation();
                 this.selectionManager.select(this.currentSelectionId, e.ctrlKey || e.metaKey);
             }
-            if (this.currentSelectionId && this.host.allowInteractions !== false
+            if (this.currentSelectionId && this.host.hostCapabilities?.allowInteractions !== false
                 && (e.key === "ContextMenu" || (e.shiftKey && e.key === "F10"))) {
                 e.preventDefault();
                 const box = this.svg.node().getBoundingClientRect();
@@ -495,7 +495,7 @@ export class Visual implements IVisual {
 
             // Capture selection ID for click-to-filter (1180.2.2.3)
             this.currentSelectionId = parsed.selectionId;
-            const interactive = !!parsed.selectionId && this.host.allowInteractions !== false;
+            const interactive = !!parsed.selectionId && this.host.hostCapabilities?.allowInteractions !== false;
             this.svg.style("cursor", interactive ? "pointer" : "default")
                 .attr("tabindex", interactive ? 0 : null)
                 .attr("role", interactive ? "button" : "img");
