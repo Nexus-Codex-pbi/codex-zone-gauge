@@ -32,7 +32,7 @@ import { surfaceTokens } from "./shared/designTokens";
 import { makeCornerBrackets, CardSignatureHandle } from "./shared/cardSignature";
 import { applyCardSignature } from "./shared/cardSignatureSettings";
 import { applyBorder } from "./shared/borderSettings";
-import { resolveCodexTheme, neonColorFor, flareHexFor } from "./shared/codexThemeSettings";
+import { resolveCodexTheme, neonColorFor, flareHexFor, forcedInk } from "./shared/codexThemeSettings";
 import { GaugeRenderCtx, GaugeZone, fitLabel, fitText } from "./renderers/helpers";
 import { renderPressureDial, renderSpeedometer, renderTachometer } from "./renderers/dialFamily";
 import { renderProgressRing } from "./renderers/ring";
@@ -433,16 +433,22 @@ export class Visual implements IVisual {
             const codex = resolveCodexTheme(this.formattingSettings.codexTheme, {
                 hcActive: this.isHighContrast, autoTheme, autoBgHex, autoTransparencyPct, behindHex,
             });
-            // A forced mode OWNS the text inks against its own composited
-            // surface — a readout colour the user picked for a white tile
-            // is not a choice about the Codex dark surface. Zone, needle,
-            // target and comparison colours stay the user's: they carry
-            // the gauge's MEANING, not its chrome.
-            const inkOverride = codex.mode !== "auto";
+            // A forced mode GUARDS the text inks against its own composited
+            // surface rather than replacing them (#819 rule 3): a readout
+            // colour the user picked for a white tile is kept on the Codex
+            // dark surface when it still reads there at 4.5:1, and only
+            // flipped to the mode's own ink when it does not. An untouched
+            // swatch always takes the mode's ink. Zone, needle, target and
+            // comparison colours stay the user's whatever the mode: they
+            // carry the gauge's MEANING, not its chrome.
             this.surface = this.isHighContrast ? this.hcBackground : codex.surfaceHex;
             const theme: Theme = codex.theme;
-            this.svg.style("color", this.isHighContrast ? this.hcForeground
-                : contrastInk(this.surface, "#000000", "#ffffff"));
+            // The mode's own inks — the same two values canvasTokens() derives
+            // for the renderers, so a flipped ink lands on the board token the
+            // instrument would have used anyway.
+            const canvasInk = contrastInk(this.surface, "#000000", "#ffffff");
+            const canvasMutedInk = mutedInk(canvasInk, this.surface);
+            this.svg.style("color", this.isHighContrast ? this.hcForeground : canvasInk);
 
             const width = Math.max(0, Number.isFinite(options.viewport.width) ? options.viewport.width : 0);
             const height = Math.max(0, Number.isFinite(options.viewport.height) ? options.viewport.height : 0);
@@ -559,12 +565,11 @@ export class Visual implements IVisual {
                 const anchor = ta === "center" ? "middle" : ta === "right" ? "end" : "start";
                 // Adaptive default (D-16 sentinel): untouched shared-Title navy
                 // swaps to the dark text token on dark surfaces.
-                // ...and the same swap when a Codex mode is FORCED: the mode
-                // owns the title ink against its own surface, whether or not
-                // the pane swatch was left on the shared-Title navy (#819).
+                // Under a FORCED mode the swatch is guarded, not replaced
+                // (#819 rule 3): a title colour the author actually picked
+                // survives if it reads on the mode's surface.
                 const setTitle = titleCfg.titleColor.value.value;
-                const adaptiveTitle = inkOverride || setTitle === "#1a1a2e"
-                    ? contrastInk(this.surface, "#000000", "#ffffff") : setTitle;
+                const adaptiveTitle = forcedInk(setTitle, canvasInk, codex, setTitle === "#1a1a2e");
                 this.titleEl
                     .attr("x", x)
                     .attr("y", titleFontSize + 4)
@@ -778,6 +783,13 @@ export class Visual implements IVisual {
                 // "board/theme token"; an explicit change wins (D-16 idiom).
                 const tClr = tCfg.targetColor.value.value;
                 const cClr = cCfg.comparisonColor.value.value;
+                // Rule 3 (#819) for the two readout inks. An untouched swatch
+                // is "" and stays null, so the renderer's own auto chain
+                // (Match Needle Colour, then the canvas token) runs exactly as
+                // it does in Auto; a swatch the author actually set is guarded
+                // against the mode's surface instead of being discarded.
+                const explicitInk = (picked: string, modeDefault: string): string | null =>
+                    picked ? forcedInk(picked, modeDefault, codex, false) : null;
                 const ctx: GaugeRenderCtx = {
                     group: this.altGroup.node() as SVGGElement,
                     defs: this.defs.node() as SVGDefsElement,
@@ -800,14 +812,15 @@ export class Visual implements IVisual {
                     // reverted AND the guard that gated the helper could never fire),
                     // and getColorForMeasure never returns "" so it had to be gated at
                     // all. Empty = unset, so the zone/needle colour still wins.
-                    // TEXT inks, so a forced Codex mode owns them (#819): an
-                    // explicit pane pick collapses to the canvas ink derived
-                    // from the Codex surface, exactly as an untouched ("")
-                    // swatch already did. "Match Needle Colour" is not a
-                    // colour choice — it says "follow the data" — so it keeps
-                    // working in every mode.
-                    valueColor: inkOverride ? null : (valueCfg.valueColor.value.value || null),
-                    unitColor: inkOverride ? null : (valueCfg.labelColor.value.value || null),
+                    // TEXT inks, so a forced Codex mode GUARDS them (#819):
+                    // an explicit pane pick is kept when it reads at 4.5:1 on
+                    // the Codex surface and collapses to the canvas ink only
+                    // when it does not; an untouched ("") swatch takes the
+                    // mode's ink as it always did. "Match Needle Colour" is
+                    // not a colour choice — it says "follow the data" — so it
+                    // keeps working in every mode.
+                    valueColor: explicitInk(valueCfg.valueColor.value.value, canvasInk),
+                    unitColor: explicitInk(valueCfg.labelColor.value.value, canvasMutedInk),
                     needleColor: valueCfg.needleColor.value.value || null,
                     matchNeedleColor: !!valueCfg.matchNeedleColor.value,
                     lowerIsBetter: String(zonesCfg.polarity.value?.value || "higherIsBetter") === "lowerIsBetter",

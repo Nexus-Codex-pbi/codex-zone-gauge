@@ -107,16 +107,19 @@ export interface GaugeRenderCtx {
  *  thermometer column, progress ring).
  *
  *  Under Neon the flare replaces the instrument's fixed board drop-shadow and
- *  is scaled by the card's glow budget; scope "flare" hues every glow with the
- *  flare colour, scope "all" lets each mark glow in its own hue. The mark's
- *  FILL is never recoloured — a red danger band is the gauge's meaning, and a
- *  purple one would be a different reading. Outside Neon the instrument's own
+ *  is scaled by the card's glow budget — ALWAYS in the mark's OWN hue, under
+ *  either scope. Every mark this glows is SEMANTIC: a zone band, the needle
+ *  standing in its band, the value arc, a lit LED, the thermometer column. A
+ *  red danger band that glows purple is reporting a colour the data never
+ *  said, so the flare colour tints ACCENTS only (corner brackets, the headline
+ *  readout) and never a verdict (#819 forced-mode contract, rule 1). The
+ *  mark's FILL was never recoloured either. Outside Neon the instrument's own
  *  board glow is returned untouched (`null` where the board has none), so Auto
  *  is byte-identical and Dark/Light simply follow the forced token set.
  *  High contrast never glows. */
 export function markGlow(ctx: GaugeRenderCtx, color: string, boardGlow: string | null): string | null {
     if (ctx.hc) return null;
-    if (ctx.codex.neon) return neonFilter(neonColorFor(color, ctx.codex), ctx.codex.glow);
+    if (ctx.codex.neon) return neonFilter(color, ctx.codex.glow);
     return boardGlow;
 }
 
