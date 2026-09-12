@@ -6,6 +6,7 @@
 import {
     GaugeRenderCtx, canvasTokens, arcPath, clearGroup, fitTransform,
     ensureGradients, progFill, applyFont, TNUM, SEGOE, activeZoneColor, polar, fitText, fitLabel,
+    markGlow, headlineGlow,
 } from "./helpers";
 import { formatModelNumber } from "../shared/numberFormat";
 import { contrastRatio } from "../shared/colorHelpers";
@@ -51,6 +52,11 @@ export function renderProgressRing(ctx: GaugeRenderCtx): void {
 
     const zoneClr = activeZoneColor(ctx);
     const arcStroke = hc ? fg : (ctx.valueArc.ringColor ?? zoneClr ?? (thinBand ? t.prog : progFill(ctx.theme)));
+    // The ring IS the data mark. `arcStroke` can be the board GRADIENT (a
+    // url(#...) reference), which no shadow can take as a colour — the board
+    // already solved that by glowing in `t.prog`, so the flare uses the same
+    // resolved hex.
+    const arcGlowHex = hc ? fg : (ctx.valueArc.ringColor ?? zoneClr ?? t.prog);
     if (pf > 0) {
         g.append("path")
             .attr("d", arcPath(cx, cy, r, 90, 90 - 360 * Math.min(pf, 0.99999)))
@@ -59,7 +65,7 @@ export function renderProgressRing(ctx: GaugeRenderCtx): void {
             .attr("stroke-width", thinBand ? 6 : 15)
             .attr("stroke-linecap", "round")
             .attr("opacity", alpha)
-            .style("filter", (!hc && t.glow) ? `drop-shadow(0 0 8px ${t.prog})` : null);
+            .style("filter", markGlow(ctx, arcGlowHex, (!hc && t.glow) ? `drop-shadow(0 0 8px ${t.prog})` : null));
     }
     if (pf > 1) {
         g.append("path")
@@ -68,8 +74,9 @@ export function renderProgressRing(ctx: GaugeRenderCtx): void {
             .attr("stroke-width", thinBand ? 6 : 15)
             .attr("stroke-linecap", "round")
             .attr("opacity", alpha)
-            .style("filter", !hc ? `drop-shadow(0 0 8px ${zoneClr || t.prog})` : null);
-        g.append("circle").attr("cx", cx).attr("cy", 24).attr("r", 6).attr("fill", arcStroke);
+            .style("filter", markGlow(ctx, arcGlowHex, !hc ? `drop-shadow(0 0 8px ${zoneClr || t.prog})` : null));
+        g.append("circle").attr("cx", cx).attr("cy", 24).attr("r", 6).attr("fill", arcStroke)
+            .style("filter", markGlow(ctx, arcGlowHex, null));
     }
 
     const marker = (value: number, color: string, comparison: boolean) => {
@@ -85,11 +92,13 @@ export function renderProgressRing(ctx: GaugeRenderCtx): void {
     if (ctx.comparison != null) marker(ctx.comparison, ctx.comparisonColor || t.unit, true);
 
     if (ctx.showValue) {
+        const valueInk = hc ? fg : (ctx.valueColor
+            || (ctx.matchNeedleColor ? (ctx.needleColor ?? activeZoneColor(ctx)) : null)
+            || t.val);
         const vt = g.append("text").attr("x", cx).attr("y", 104).attr("text-anchor", "middle")
-            .attr("fill", hc ? fg : (ctx.valueColor
-                || (ctx.matchNeedleColor ? (ctx.needleColor ?? activeZoneColor(ctx)) : null)
-                || t.val))
+            .attr("fill", valueInk)
             .style("font-feature-settings", TNUM)
+            .style("filter", headlineGlow(ctx, valueInk))
             .text(percent(pv));
         applyFont(vt, ctx.valueFont, 40, "700");
         fitText(vt, 144, 48);

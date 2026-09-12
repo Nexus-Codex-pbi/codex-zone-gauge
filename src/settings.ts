@@ -9,6 +9,7 @@ import FormattingSettingsSlice = formattingSettings.Slice;
 import FormattingSettingsModel = formattingSettings.Model;
 
 import { BackgroundSettings } from "./shared/backgroundSettings";
+import { CodexThemeSettings } from "./shared/codexThemeSettings";
 import { TitleSettings } from "./shared/titleSettings";
 import { BorderSettings } from "./shared/borderSettings";
 import { CardSignatureSettings } from "./shared/cardSignatureSettings";
@@ -553,6 +554,7 @@ export class VisualFormattingSettingsModel extends FormattingSettingsModel {
     comparisonSettingsCard = new ComparisonSettingsCard();
     valueDisplayCard = new ValueDisplayCard();
     background = new BackgroundSettings();
+    codexTheme = new CodexThemeSettings();
 
     constructor() {
         super();
@@ -577,5 +579,5 @@ export class VisualFormattingSettingsModel extends FormattingSettingsModel {
     // gaugeSettingsCard retired from the pane with the remix (type/thickness/
     // animation/legacy border were remix-only knobs; shared Border card owns
     // borders). Instance kept so persisted values still deserialize.
-    cards = [this.gaugeStyleCard, this.titleSettingsCard, this.zonesCard, this.targetSettingsCard, this.comparisonSettingsCard, this.valueDisplayCard, this.valueArcCard, this.background, this.cardSignature, this.visualBorder];
+    cards = [this.gaugeStyleCard, this.titleSettingsCard, this.zonesCard, this.targetSettingsCard, this.comparisonSettingsCard, this.valueDisplayCard, this.valueArcCard, this.background, this.codexTheme, this.cardSignature, this.visualBorder];
 }

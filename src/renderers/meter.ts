@@ -8,6 +8,7 @@
 import {
     GaugeRenderCtx, canvasTokens, arcPath, polar, clearGroup, fitTransform,
     fraction, applyFont, TNUM, SEGOE, activeZoneColor, fitText, fitLabel,
+    markGlow, headlineGlow,
 } from "./helpers";
 
 const A0 = 190, SPAN = 200, CX = 125, CY = 130, R = 94;
@@ -37,7 +38,9 @@ export function renderSegmentedMeter(ctx: GaugeRenderCtx): void {
             .attr("fill", "none").attr("stroke", col)
             .attr("stroke-width", 13).attr("stroke-linecap", "butt")
             .attr("opacity", on ? 1 : (hc ? 0.4 : 0.15))
-            .style("filter", (on && !hc && t.glow) ? `drop-shadow(0 0 5px ${col})` : null);
+            // Only a LIT segment flares — an unlit block is the absence of a
+            // reading and glowing it would light the whole meter.
+            .style("filter", on ? markGlow(ctx, col, (!hc && t.glow) ? `drop-shadow(0 0 5px ${col})` : null) : null);
     }
 
     // Target / comparison as tick marks across the block track
@@ -51,11 +54,13 @@ export function renderSegmentedMeter(ctx: GaugeRenderCtx): void {
     if (ctx.comparison != null) tickAt(ctx.comparison, ctx.comparisonColor || t.unit, 2);
 
     if (ctx.showValue) {
+        const valueInk = hc ? fg : (ctx.valueColor
+            || (ctx.matchNeedleColor ? (ctx.needleColor ?? activeZoneColor(ctx)) : null)
+            || t.val);
         const vt = g.append("text").attr("x", CX).attr("y", 120).attr("text-anchor", "middle")
-            .attr("fill", hc ? fg : (ctx.valueColor
-                || (ctx.matchNeedleColor ? (ctx.needleColor ?? activeZoneColor(ctx)) : null)
-                || t.val))
+            .attr("fill", valueInk)
             .style("font-feature-settings", TNUM)
+            .style("filter", headlineGlow(ctx, valueInk))
             .text(ctx.valueText);
         applyFont(vt, ctx.valueFont, 30, "700");
         fitText(vt, 180, 36);

@@ -13,6 +13,7 @@ import { select, Selection } from "d3-selection";
 import { Theme } from "../shared/bandEngine";
 import { scaleLinear } from "d3-scale";
 import { contrastInk, mutedInk } from "../shared/colorHelpers";
+import { ResolvedCodexTheme, neonColorFor, neonFilter } from "../shared/codexThemeSettings";
 
 export interface GaugeZone {
     from: number;   // domain value
@@ -96,6 +97,35 @@ export interface GaugeRenderCtx {
     valueArc: ValueArcConfig;
     segments: number;            // Segmented Meter LED count (pane, default 18)
     dialFace: string;            // speedo/tach face: auto|slate|deepNavy|ink|none
+    /** Nexus Codex Theme (#819), resolved ONCE in visual.ts and routed here.
+     *  `theme`/`surface` above are already the resolved ones; this carries the
+     *  mode and the neon budget/scope the instruments need for their glows. */
+    codex: ResolvedCodexTheme;
+}
+
+/** The glow a PRIMARY DATA MARK carries (value arc, needle, zone band, LED,
+ *  thermometer column, progress ring).
+ *
+ *  Under Neon the flare replaces the instrument's fixed board drop-shadow and
+ *  is scaled by the card's glow budget; scope "flare" hues every glow with the
+ *  flare colour, scope "all" lets each mark glow in its own hue. The mark's
+ *  FILL is never recoloured — a red danger band is the gauge's meaning, and a
+ *  purple one would be a different reading. Outside Neon the instrument's own
+ *  board glow is returned untouched (`null` where the board has none), so Auto
+ *  is byte-identical and Dark/Light simply follow the forced token set.
+ *  High contrast never glows. */
+export function markGlow(ctx: GaugeRenderCtx, color: string, boardGlow: string | null): string | null {
+    if (ctx.hc) return null;
+    if (ctx.codex.neon) return neonFilter(neonColorFor(color, ctx.codex), ctx.codex.glow);
+    return boardGlow;
+}
+
+/** The glow the HEADLINE readout carries under Neon — and nothing else does.
+ *  Never the tick labels, scale numbers or the unit/category line: the contract
+ *  forbids glowing body text smaller than the headline. */
+export function headlineGlow(ctx: GaugeRenderCtx, color: string): string | null {
+    if (ctx.hc || !ctx.codex.neon) return null;
+    return neonFilter(neonColorFor(color, ctx.codex), ctx.codex.glow);
 }
 
 /* ─── Board token maps ──────────────────────────────────────────────────────

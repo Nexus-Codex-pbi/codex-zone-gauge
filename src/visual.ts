@@ -32,6 +32,7 @@ import { surfaceTokens } from "./shared/designTokens";
 import { makeCornerBrackets, CardSignatureHandle } from "./shared/cardSignature";
 import { applyCardSignature } from "./shared/cardSignatureSettings";
 import { applyBorder } from "./shared/borderSettings";
+import { resolveCodexTheme, neonColorFor } from "./shared/codexThemeSettings";
 import { GaugeRenderCtx, GaugeZone, fitLabel, fitText } from "./renderers/helpers";
 import { renderPressureDial, renderSpeedometer, renderTachometer } from "./renderers/dialFamily";
 import { renderProgressRing } from "./renderers/ring";
@@ -413,11 +414,33 @@ export class Visual implements IVisual {
             // is the ONLY new engine-level primitive Task 4 introduces; no
             // dome/face/hub/six-style rebuild (Phase 3, GAUGE-02/03).
             const background = this.formattingSettings.background;
-            this.surface = this.isHighContrast ? this.hcBackground : compositeOver(
-                background.backgroundColor.value?.value ?? "#ffffff",
-                background.transparency.value ?? 100,
-                colorPalette?.background?.value || "#ffffff");
-            const theme: Theme = surfaceTone(this.surface);
+            const autoBgHex = background.backgroundColor.value?.value ?? "#ffffff";
+            const autoTransparencyPct = background.transparency.value ?? 100;
+            const behindHex = colorPalette?.background?.value || "#ffffff";
+            const autoSurface = this.isHighContrast ? this.hcBackground
+                : compositeOver(autoBgHex, autoTransparencyPct, behindHex);
+            const autoTheme: Theme = surfaceTone(autoSurface);
+            // ─── Nexus Codex Theme (#819) ──────────────────────────────
+            // The ONE switch above the automatic pick, resolved exactly
+            // ONCE here and routed into every instrument through the
+            // render context (this visual has five renderers; resolving
+            // per-renderer would let the surface and the marks disagree).
+            // Auto returns the values derived immediately above, so a
+            // report that never touched the card renders byte-identically.
+            // Dark/Light/Neon paint the Codex surface at the card's own
+            // Surface Transparency and force the token set. HC already
+            // collapsed to Auto inside the resolver.
+            const codex = resolveCodexTheme(this.formattingSettings.codexTheme, {
+                hcActive: this.isHighContrast, autoTheme, autoBgHex, autoTransparencyPct, behindHex,
+            });
+            // A forced mode OWNS the text inks against its own composited
+            // surface — a readout colour the user picked for a white tile
+            // is not a choice about the Codex dark surface. Zone, needle,
+            // target and comparison colours stay the user's: they carry
+            // the gauge's MEANING, not its chrome.
+            const inkOverride = codex.mode !== "auto";
+            this.surface = this.isHighContrast ? this.hcBackground : codex.surfaceHex;
+            const theme: Theme = codex.theme;
             this.svg.style("color", this.isHighContrast ? this.hcForeground
                 : contrastInk(this.surface, "#000000", "#ffffff"));
 
@@ -433,13 +456,14 @@ export class Visual implements IVisual {
             // before this plan — fully transparent), so an OLD saved
             // report renders alpha 0, pixel-identical, per D-06.
             if (!this.isHighContrast) {
-                const background = this.formattingSettings.background;
-                const bgHex = background.backgroundColor.value?.value ?? "#ffffff";
-                const bgTransparencyPct = background.transparency.value ?? 100;
+                // Codex Theme owns this fill in a forced mode: the Codex card
+                // surface at the card's Surface Transparency, INSTEAD of the
+                // Background colour. In Auto the resolver hands back the
+                // Background card's own fill and transparency unchanged.
                 this.backgroundRect
                     .attr("width", width)
                     .attr("height", height)
-                    .attr("fill", toRgba(bgHex, bgTransparencyPct));
+                    .attr("fill", toRgba(codex.bgHex, codex.transparencyPct));
             } else {
                 this.backgroundRect.attr("width", width).attr("height", height).attr("fill", this.hcBackground);
             }
@@ -456,12 +480,15 @@ export class Visual implements IVisual {
                 palette: this.host.colorPalette,
                 metadataObjects: undefined,
             });
+            // Corner brackets are CHROME, not data: under Neon they take the
+            // flare colour outright (scope "flare") and the card's glow budget
+            // replaces the fixed dark-theme 55.
             applyCardSignature(this.cornerSignature, this.formattingSettings.cardSignature, {
-                autoHex: accentToken(theme),
+                autoHex: neonColorFor(accentToken(theme), codex),
                 hcActive: this.isHighContrast,
                 hcColor: this.hcForeground,
                 mirror: true,
-                glowMix: this.isHighContrast ? 0 : (theme === "dark" ? 55 : 0),
+                glowMix: this.isHighContrast ? 0 : codex.neon ? codex.glow : (theme === "dark" ? 55 : 0),
                 muted: false,
             });
             if (width < 80 || height < 60) {
@@ -531,8 +558,11 @@ export class Visual implements IVisual {
                 const anchor = ta === "center" ? "middle" : ta === "right" ? "end" : "start";
                 // Adaptive default (D-16 sentinel): untouched shared-Title navy
                 // swaps to the dark text token on dark surfaces.
+                // ...and the same swap when a Codex mode is FORCED: the mode
+                // owns the title ink against its own surface, whether or not
+                // the pane swatch was left on the shared-Title navy (#819).
                 const setTitle = titleCfg.titleColor.value.value;
-                const adaptiveTitle = setTitle === "#1a1a2e"
+                const adaptiveTitle = inkOverride || setTitle === "#1a1a2e"
                     ? contrastInk(this.surface, "#000000", "#ffffff") : setTitle;
                 this.titleEl
                     .attr("x", x)
@@ -769,8 +799,14 @@ export class Visual implements IVisual {
                     // reverted AND the guard that gated the helper could never fire),
                     // and getColorForMeasure never returns "" so it had to be gated at
                     // all. Empty = unset, so the zone/needle colour still wins.
-                    valueColor: valueCfg.valueColor.value.value || null,
-                    unitColor: valueCfg.labelColor.value.value || null,
+                    // TEXT inks, so a forced Codex mode owns them (#819): an
+                    // explicit pane pick collapses to the canvas ink derived
+                    // from the Codex surface, exactly as an untouched ("")
+                    // swatch already did. "Match Needle Colour" is not a
+                    // colour choice — it says "follow the data" — so it keeps
+                    // working in every mode.
+                    valueColor: inkOverride ? null : (valueCfg.valueColor.value.value || null),
+                    unitColor: inkOverride ? null : (valueCfg.labelColor.value.value || null),
                     needleColor: valueCfg.needleColor.value.value || null,
                     matchNeedleColor: !!valueCfg.matchNeedleColor.value,
                     lowerIsBetter: String(zonesCfg.polarity.value?.value || "higherIsBetter") === "lowerIsBetter",
@@ -798,6 +834,8 @@ export class Visual implements IVisual {
                     },
                     segments: this.formattingSettings.gaugeStyleCard.segments.value ?? 18,
                     dialFace: String(this.formattingSettings.gaugeStyleCard.dialFace.value?.value || "auto"),
+                    // ONE resolved theme for all five instruments (#819).
+                    codex,
                 };
                 switch (styleKey) {
                     case "pressureDial": renderPressureDial(ctx); break;
@@ -1097,6 +1135,7 @@ export class Visual implements IVisual {
     }
 
     public getFormattingModel(): powerbi.visuals.FormattingModel {
+        this.formattingSettings.codexTheme.reveal();
         return this.formattingSettingsService.buildFormattingModel(this.formattingSettings);
     }
 }

@@ -8,6 +8,7 @@ import {
     needlePoints, needleTransform, polar, clearGroup, fitTransform,
     fraction, dangerSpans, zoneSpans, activeZoneColor, stateVsTarget, ensureGradients,
     domeFill, hubFill, needleFill, applyFont, TNUM, DialCfg, SEGOE, scaleTicks, fitText, fitLabel,
+    markGlow, headlineGlow,
 } from "./helpers";
 
 interface DialSpec {
@@ -112,7 +113,8 @@ function renderDial(ctx: GaugeRenderCtx, spec: DialSpec, redSpan: { f0: number; 
                 .attr("d", arcPath(cx, cy, spec.bandR, a0 - span * run.f0, a0 - span * run.f1))
                 .attr("fill", "none").attr("stroke", bandClr)
                 .attr("stroke-width", 7).attr("stroke-linecap", "round")
-                .style("filter", (!hc && ctx.theme === "dark") ? `drop-shadow(0 0 6px ${bandClr})` : null);
+                .style("filter", markGlow(ctx, bandClr,
+                    (!hc && ctx.theme === "dark") ? `drop-shadow(0 0 6px ${bandClr})` : null));
         }
     }
 
@@ -162,11 +164,15 @@ function renderDial(ctx: GaugeRenderCtx, spec: DialSpec, redSpan: { f0: number; 
         const alpha = Math.max(0, Math.min(1, ctx.valueArc.opacity / 100));
         const r = ctx.valueArc.style === "band" ? spec.cfg.rOut + 3 : (spec.cfg.rOut + spec.cfg.rMajIn) / 2;
         const w = ctx.valueArc.style === "band" ? 4 : (spec.cfg.rOut - spec.cfg.rMajIn) + 4;
+        // The value arc is a PRIMARY data mark — it gains a flare under Neon
+        // (it had no board glow of its own, hence the `null` board case).
+        const arcClr = hc ? fg : (ctx.valueArc.ringColor || activeZoneColor(ctx) || ft.prog);
         g.append("path")
             .attr("d", arcPath(cx, cy, r, a0, a0 - span * vFrac))
-            .attr("fill", "none").attr("stroke", hc ? fg : (ctx.valueArc.ringColor || activeZoneColor(ctx) || ft.prog))
+            .attr("fill", "none").attr("stroke", arcClr)
             .attr("stroke-width", w).attr("stroke-linecap", "round")
-            .attr("opacity", (ctx.valueArc.style === "overlay" ? 0.28 : 1) * alpha);
+            .attr("opacity", (ctx.valueArc.style === "overlay" ? 0.28 : 1) * alpha)
+            .style("filter", markGlow(ctx, arcClr, null));
     }
 
     // Needle + hub
@@ -177,16 +183,23 @@ function renderDial(ctx: GaugeRenderCtx, spec: DialSpec, redSpan: { f0: number; 
     // then the per-style state colour, then the board token.
     const zoneClr = activeZoneColor(ctx);
     const needleClr = ctx.needleColor ?? zoneClr ?? stateClr ?? null;
+    // Needle + hub are the dial's pointer — primary marks, so they flare under
+    // Neon. The glow hue is the needle's RESOLVED colour; when the needle is
+    // painted with the board gradient there is no single hex to glow, so the
+    // face's own needle token stands in for it.
+    const needleGlow = markGlow(ctx, needleClr ?? ft.needle, null);
     g.append("polygon")
         .attr("points", needlePoints(cx, cy, spec.needleLen, 6))
         .attr("transform", needleTransform(cx, cy, a0 - span * vFrac))
         .attr("fill", hc ? fg : (needleClr ?? needleFill(faceThemeKey)))
-        .attr("stroke", hc ? bg : null).attr("stroke-width", hc ? 2 : null);
+        .attr("stroke", hc ? bg : null).attr("stroke-width", hc ? 2 : null)
+        .style("filter", needleGlow);
     // Hub follows the NEEDLE (Neil 2026-07-27) — a fixed cyan gradient hub under
     // a zone-coloured needle read as a separate signal. Falls back to the board
     // hub gradient only when the needle has no resolved colour of its own.
     g.append("circle").attr("cx", cx).attr("cy", cy).attr("r", 9)
-        .attr("fill", hc ? fg : (needleClr ?? hubFill(faceThemeKey)));
+        .attr("fill", hc ? fg : (needleClr ?? hubFill(faceThemeKey)))
+        .style("filter", needleGlow);
     if (!hc) g.append("circle").attr("cx", cx - 3).attr("cy", cy - 3).attr("r", 3).attr("fill", "rgba(255,255,255,0.6)");
     g.append("circle").attr("cx", cx).attr("cy", cy).attr("r", 3)
         .attr("fill", hc ? bg : (needleClr ? "#000000" : ft.hubi));
@@ -199,9 +212,11 @@ function renderDial(ctx: GaugeRenderCtx, spec: DialSpec, redSpan: { f0: number; 
     // black with a light-grey face (Neil 2026-07-28, same fault family as the end
     // labels above). The pressure dial has no face, so ft === t and nothing moves.
     if (ctx.showValue) {
+        const valueInk = hc ? fg : (ctx.valueColor || (ctx.matchNeedleColor ? needleClr : null) || t.val);
         const vt = g.append("text").attr("x", cx).attr("y", spec.valueY).attr("text-anchor", "middle")
-            .attr("fill", hc ? fg : (ctx.valueColor || (ctx.matchNeedleColor ? needleClr : null) || t.val))
+            .attr("fill", valueInk)
             .style("font-feature-settings", TNUM)
+            .style("filter", headlineGlow(ctx, valueInk))
             .text(ctx.valueText);
         applyFont(vt, ctx.valueFont, spec.valueSize, "700");
         fitText(vt, spec.face ? 86 : 110, 34);

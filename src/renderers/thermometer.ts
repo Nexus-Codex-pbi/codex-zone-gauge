@@ -8,6 +8,7 @@
 import {
     GaugeRenderCtx, canvasTokens, clearGroup, fitTransform, fraction,
     ensureGradients, thermFill, applyFont, TNUM, SEGOE, activeZoneColor, fitText, fitLabel,
+    markGlow, headlineGlow,
 } from "./helpers";
 import { contrastInk } from "../shared/colorHelpers";
 
@@ -33,11 +34,11 @@ export function renderThermometer(ctx: GaugeRenderCtx): void {
     if (fillH > 0) {
         g.append("rect").attr("x", TX).attr("y", fillY).attr("width", TW).attr("height", fillH)
             .attr("rx", TW / 2).attr("fill", fill)
-            .style("filter", (!hc && t.glow) ? `drop-shadow(0 0 6px ${fill})` : null);
+            .style("filter", markGlow(ctx, fill, (!hc && t.glow) ? `drop-shadow(0 0 6px ${fill})` : null));
     }
     g.append("circle").attr("cx", TX + TW / 2).attr("cy", BULB_CY).attr("r", BULB_R)
         .attr("fill", fill)
-        .style("filter", (!hc && t.glow) ? `drop-shadow(0 0 6px ${fill})` : null);
+        .style("filter", markGlow(ctx, fill, (!hc && t.glow) ? `drop-shadow(0 0 6px ${fill})` : null));
 
     // Scale ticks + numbers (quarters of the domain)
     for (let i = 0; i <= 4; i++) {
@@ -72,11 +73,13 @@ export function renderThermometer(ctx: GaugeRenderCtx): void {
         applyFont(bulbText, ctx.valueFont, 18, "700");
         const bulbBox = bulbText.node().getBBox();
         if (bulbBox.width > 28 || bulbBox.height > 26) bulbText.remove();
+        const valueInk = hc ? fg : (ctx.valueColor
+            || (ctx.matchNeedleColor ? (ctx.needleColor ?? activeZoneColor(ctx)) : null)
+            || t.val);
         const vt = g.append("text").attr("x", 150).attr("y", 104).attr("text-anchor", "start")
-            .attr("fill", hc ? fg : (ctx.valueColor
-                || (ctx.matchNeedleColor ? (ctx.needleColor ?? activeZoneColor(ctx)) : null)
-                || t.val))
+            .attr("fill", valueInk)
             .style("font-feature-settings", TNUM)
+            .style("filter", headlineGlow(ctx, valueInk))
             .text(ctx.valueText);
         applyFont(vt, ctx.valueFont, 30, "700");
         fitText(vt, 78, 34);
