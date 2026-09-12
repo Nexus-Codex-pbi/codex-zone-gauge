@@ -18,7 +18,14 @@ import { ResolvedCodexTheme, neonColorFor, neonFilter } from "../shared/codexThe
 export interface GaugeZone {
     from: number;   // domain value
     to: number;     // domain value
-    color: string;  // resolved zone colour (fx/theme aware, supplied by visual.ts)
+    // The zone colour as visual.ts resolved it: the pane swatch, or the system
+    // foreground under high contrast. NOT fx-resolved — the property carries
+    // instanceKind ConstantOrRule, but the ColorHelper/wildcard overlay was
+    // deliberately removed (visual.ts:697-708, 806-814) because the wildcard
+    // stopped swatch picks persisting. So there is no resolved-vs-pane pair
+    // here and nothing for the suite's isFxResolved() exemption to test
+    // (#819 pass 2) — do not read this comment as a resolver that exists.
+    color: string;
     band: "success" | "warning" | "danger";
 }
 
