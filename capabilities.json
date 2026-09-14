@@ -223,13 +223,13 @@
           "type": {
             "numeric": true
           },
-          "displayName": "On-target \u00b1%"
+          "displayName": "On-target ±%"
         },
         "warningTolerance": {
           "type": {
             "numeric": true
           },
-          "displayName": "Warning \u00b1%"
+          "displayName": "Warning ±%"
         },
         "zone1End": {
           "displayName": "Zone 1 End",
@@ -658,6 +658,12 @@
           "displayName": "Surface Transparency",
           "type": {
             "numeric": true
+          }
+        },
+        "neon": {
+          "displayName": "Neon Glow",
+          "type": {
+            "bool": true
           }
         },
         "neonColor": {
